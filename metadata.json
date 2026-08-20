@@ -1,0 +1,6 @@
+{
+  "name": "ระบบจัดการอู่ซ่อมรถยนต์ Songkarn-v1",
+  "description": "ระบบจัดการอู่ซ่อมรถยนต์ครบวงจร บันทึกข้อมูลใบสั่งซ่อม สต็อกอะไหล่ ประวัติการซ่อม ออกใบเสนอราคา/ใบเสร็จ และบันทึกฐานข้อมูลแบบเรียลไทม์",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
