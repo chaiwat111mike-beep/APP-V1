@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow read/write for all garage management collections
+    match /job_orders/{jobId} {
+      allow read, write: if true;
+    }
+    match /spare_parts/{partId} {
+      allow read, write: if true;
+    }
+    match /customers/{customerId} {
+      allow read, write: if true;
+    }
+    match /mechanics/{mechanicId} {
+      allow read, write: if true;
+    }
+    match /service_bays/{bayId} {
+      allow read, write: if true;
+    }
+    match /garage_profile/{profileId} {
+      allow read, write: if true;
+    }
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

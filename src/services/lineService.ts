@@ -7,6 +7,69 @@ export const DEFAULT_MECHANIC_PHONE = '061-069-2036';
 export const DEFAULT_MECHANIC_NAME = 'ช่างไมค์';
 
 /**
+ * Safe clipboard copy with fallback for browser & iframe sandboxes
+ */
+export const copyToClipboard = async (text: string): Promise<boolean> => {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (err) {
+    console.warn('navigator.clipboard failed, attempting fallback', err);
+  }
+
+  try {
+    if (typeof document !== 'undefined') {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      textArea.setAttribute('readonly', '');
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      return successful;
+    }
+  } catch (err) {
+    console.error('Copy fallback failed', err);
+  }
+  return false;
+};
+
+/**
+ * Ensures text length does not exceed OS/Browser URL limits (HTTP 414 or protocol handler crash).
+ * Safe limit for LINE URL scheme is ~1,800 characters encoded.
+ */
+export const prepareSafeLineText = (text: string, maxEncodedLength: number = 1800): string => {
+  if (encodeURIComponent(text).length <= maxEncodedLength) {
+    return text;
+  }
+
+  // Simplify decorative borders and extra line breaks first
+  const simplified = text
+    .replace(/[━─═-]{3,}/g, '---')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  if (encodeURIComponent(simplified).length <= maxEncodedLength) {
+    return simplified;
+  }
+
+  // Gracefully truncate if still too large
+  let sliceLen = Math.floor(maxEncodedLength / 6);
+  let truncated = simplified.slice(0, sliceLen);
+  while (encodeURIComponent(truncated + '\n...(ดูรายละเอียดเต็มในแชท)').length > maxEncodedLength && sliceLen > 50) {
+    sliceLen -= 15;
+    truncated = simplified.slice(0, sliceLen);
+  }
+  return truncated + '\n...(ดูรายละเอียดเต็มในแชท)';
+};
+
+/**
  * Generate Direct LINE Add-Friend / Chat Link
  */
 export const getDirectLineUrl = (lineId: string = DEFAULT_LINE_ID): string => {
@@ -18,7 +81,64 @@ export const getDirectLineUrl = (lineId: string = DEFAULT_LINE_ID): string => {
  * Generate LINE Message Share URL for 1-click send in LINE app/web
  */
 export const getLineShareUrl = (text: string): string => {
-  return `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
+  const safe = prepareSafeLineText(text, 1800);
+  return `https://line.me/R/msg/text/?${encodeURIComponent(safe)}`;
+};
+
+/**
+ * Generate Direct native LINE App URI scheme (line://msg/text/...)
+ * Useful for mobile app and Desktop LINE client
+ */
+export const getLineAppProtocolUrl = (text: string): string => {
+  const safe = prepareSafeLineText(text, 1800);
+  return `line://msg/text/${encodeURIComponent(safe)}`;
+};
+
+/**
+ * Opens LINE with the message and copies full message to clipboard
+ * Uses anchor element dispatch to bypass iframe popup blocking
+ */
+export const openLineShare = async (
+  text: string,
+  options?: { mode?: 'web' | 'app' | 'auto'; skipCopy?: boolean }
+): Promise<{ success: boolean; copied: boolean; url: string }> => {
+  let copied = false;
+  if (!options?.skipCopy) {
+    copied = await copyToClipboard(text);
+  }
+
+  const mode = options?.mode || 'auto';
+  const url = mode === 'app' ? getLineAppProtocolUrl(text) : getLineShareUrl(text);
+
+  try {
+    if (typeof document !== 'undefined') {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        if (document.body.contains(a)) {
+          document.body.removeChild(a);
+        }
+      }, 200);
+      return { success: true, copied, url };
+    }
+  } catch (err) {
+    console.warn('Anchor dispatch failed, falling back to window.open:', err);
+  }
+
+  try {
+    if (typeof window !== 'undefined') {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return { success: true, copied, url };
+    }
+  } catch (e2) {
+    console.error('Failed to open LINE URL:', e2);
+  }
+
+  return { success: false, copied, url };
 };
 
 /**
@@ -158,3 +278,50 @@ ${listText}
 ━━━━━━━━━━━━━━━━
 📦 กรุณาตรวจเช็คและสั่งซื้ออะไหล่เติมสต็อกเข้าระบบ`;
 };
+
+/**
+ * Concise Versions (ภายใต้ขีดจำกัดความยาว เพื่อส่งเข้าแอป LINE ได้ทันที 100%)
+ */
+export const generateJobIntakeConcise = (job: JobOrder, garage: GarageProfile): string => {
+  const deliveryDate = formatThaiDateTime(job.estimatedCompletionDate);
+  return `🚗 อู่สงกรานต์ (ช่างไมค์)
+📋 รับรถเข้าบริการ ใบสั่งซ่อม: ${job.jobNo}
+🚘 ทะเบียน: ${job.licensePlate} (${job.carBrand} ${job.carModel})
+👤 ลูกค้า: ${job.customerName}
+🔧 อาการ: ${job.issueDescription.slice(0, 90)}
+⏱ ไมล์: ${job.mileage.toLocaleString()} กม.
+🏁 กำหนดส่งมอบ: ${deliveryDate}
+📞 ติดต่อช่างไมค์: ${garage.mechanicPhone || garage.phone || DEFAULT_MECHANIC_PHONE}
+📲 LINE: ${garage.lineId || DEFAULT_LINE_ID}`;
+};
+
+export const generateJobStatusUpdateConcise = (job: JobOrder, garage: GarageProfile): string => {
+  const statusThai = formatJobStatusThai(job.status);
+  const deliveryDate = formatThaiDateTime(job.estimatedCompletionDate);
+  return `🔔 อู่สงกรานต์ (ช่างไมค์)
+📊 อัปเดตงานซ่อม ทะเบียน: ${job.licensePlate}
+🔢 ใบสั่งซ่อม: ${job.jobNo}
+⚡ สถานะ: ${statusThai}
+💰 ยอดรวม: ฿${job.totalAmount.toLocaleString()} บาท
+🏁 กำหนดส่งมอบ: ${deliveryDate}
+${job.technicianNotes ? `📝 ช่างแจ้ง: ${job.technicianNotes.slice(0, 80)}\n` : ''}📞 ช่างไมค์: ${garage.mechanicPhone || garage.phone || DEFAULT_MECHANIC_PHONE}
+📲 LINE: ${garage.lineId || DEFAULT_LINE_ID}`;
+};
+
+export const generateJobCompletedConcise = (job: JobOrder, garage: GarageProfile): string => {
+  const partsTotal = job.partsUsed.reduce((sum, p) => sum + p.totalPrice, 0);
+  const subtotal = partsTotal + job.laborFee + (job.otherFee || 0) - job.discount;
+  const vat = subtotal > 0 ? (subtotal * (job.vatPercent ?? 7)) / 100 : 0;
+  const grandTotal = Math.max(0, subtotal + vat);
+
+  return `🏁 อู่สงกรานต์ (ช่างไมค์)
+✅ รถซ่อมเสร็จเรียบร้อย พร้อมรับรถ
+🚘 ทะเบียน: ${job.licensePlate} (${job.carBrand} ${job.carModel})
+🔢 ใบสั่งซ่อม: ${job.jobNo}
+👤 ลูกค้า: ${job.customerName}
+⭐ ยอดสุทธิทั้งสิ้น: ฿${grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท
+💳 พร้อมเพย์: ${garage.promptPayId || garage.phone || DEFAULT_MECHANIC_PHONE} (${garage.bankAccountName || 'อู่สงกรานต์'})
+📞 นัดรับรถ: ${garage.mechanicPhone || garage.phone || DEFAULT_MECHANIC_PHONE} (ช่างไมค์)
+📲 LINE ID: ${garage.lineId || DEFAULT_LINE_ID}`;
+};
+

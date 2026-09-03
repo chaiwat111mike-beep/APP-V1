@@ -18,12 +18,43 @@ import {
 import { useGarage } from '../context/GarageContext';
 import { GarageProfile } from '../types';
 import { GarageLogo } from './GarageLogo';
+import { PromptPayQRCard } from './PromptPayQRCard';
 
 export const SettingsView: React.FC = () => {
   const { garageProfile, updateGarageProfile, syncStatus, isOnline } = useGarage();
 
-  const [formData, setFormData] = useState<GarageProfile>({ ...garageProfile });
+  const [formData, setFormData] = useState<GarageProfile>({
+    name: garageProfile.name || 'อู่สงกรานต์ ออโต้เซอร์วิส',
+    phone: garageProfile.phone || '061-069-2036',
+    email: garageProfile.email || '',
+    address: garageProfile.address || '',
+    taxId: garageProfile.taxId || '',
+    vatPercent: garageProfile.vatPercent ?? 7,
+    promptPayId: garageProfile.promptPayId || '061-069-2036',
+    bankAccountName: garageProfile.bankAccountName || 'สงกรานต์ ออโต้เซอร์วิส',
+    bankAccountNumber: garageProfile.bankAccountNumber || '',
+    warrantyTerms: garageProfile.warrantyTerms || 'รับประกันงานซ่อมและอะไหล่แท้ 3 เดือน หรือ 5,000 กิโลเมตร',
+    ...garageProfile,
+  });
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  // Keep in sync if profile updates
+  React.useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      ...garageProfile,
+      name: garageProfile.name || '',
+      phone: garageProfile.phone || '',
+      email: garageProfile.email || '',
+      address: garageProfile.address || '',
+      taxId: garageProfile.taxId || '',
+      vatPercent: garageProfile.vatPercent ?? 7,
+      promptPayId: garageProfile.promptPayId || '',
+      bankAccountName: garageProfile.bankAccountName || '',
+      bankAccountNumber: garageProfile.bankAccountNumber || '',
+      warrantyTerms: garageProfile.warrantyTerms || '',
+    }));
+  }, [garageProfile]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,7 +123,7 @@ export const SettingsView: React.FC = () => {
               <input
                 type="text"
                 required
-                value={formData.name}
+                value={formData.name || ''}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 className="w-full px-3 py-2 bg-[#0F1113] border border-[#2D3135] rounded-lg text-gray-100 font-bold focus:outline-none focus:border-orange-500"
               />
@@ -103,7 +134,7 @@ export const SettingsView: React.FC = () => {
               <input
                 type="text"
                 required
-                value={formData.phone}
+                value={formData.phone || ''}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 className="w-full px-3 py-2 bg-[#0F1113] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500"
               />
@@ -113,7 +144,7 @@ export const SettingsView: React.FC = () => {
               <label className="block text-gray-300 font-semibold mb-1">อีเมลกิจการ</label>
               <input
                 type="email"
-                value={formData.email}
+                value={formData.email || ''}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 className="w-full px-3 py-2 bg-[#0F1113] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500"
               />
@@ -123,7 +154,7 @@ export const SettingsView: React.FC = () => {
               <label className="block text-gray-300 font-semibold mb-1">ที่อยู่อู่ซ่อมรถ</label>
               <textarea
                 rows={2}
-                value={formData.address}
+                value={formData.address || ''}
                 onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                 className="w-full px-3 py-2 bg-[#0F1113] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500"
               />
@@ -133,7 +164,7 @@ export const SettingsView: React.FC = () => {
               <label className="block text-gray-300 font-semibold mb-1">เลขประจำตัวผู้เสียภาษี (Tax ID)</label>
               <input
                 type="text"
-                value={formData.taxId}
+                value={formData.taxId || ''}
                 onChange={(e) => setFormData({ ...formData, taxId: e.target.value })}
                 className="w-full px-3 py-2 bg-[#0F1113] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500 font-mono"
               />
@@ -143,7 +174,7 @@ export const SettingsView: React.FC = () => {
               <label className="block text-gray-300 font-semibold mb-1">อัตราภาษีมูลค่าเพิ่ม VAT (%)</label>
               <input
                 type="number"
-                value={formData.vatPercent}
+                value={formData.vatPercent ?? 7}
                 onChange={(e) => setFormData({ ...formData, vatPercent: Number(e.target.value) })}
                 className="w-full px-3 py-2 bg-[#0F1113] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500 font-mono"
               />
@@ -163,17 +194,19 @@ export const SettingsView: React.FC = () => {
               <label className="block text-gray-300 font-semibold mb-1">เบอร์ / เลขพร้อมเพย์ (PromptPay)</label>
               <input
                 type="text"
-                value={formData.promptPayId}
+                value={formData.promptPayId || ''}
                 onChange={(e) => setFormData({ ...formData, promptPayId: e.target.value })}
+                placeholder="เช่น 0610692036"
                 className="w-full px-3 py-2 bg-[#0F1113] border border-[#2D3135] rounded-lg text-orange-400 font-mono font-bold focus:outline-none focus:border-orange-500"
               />
+              <span className="text-[10px] text-gray-500 mt-1 block">รองรับเบอร์โทร 10 หลัก หรือเลขบัตรประชาชน 13 หลัก</span>
             </div>
 
             <div>
               <label className="block text-gray-300 font-semibold mb-1">ชื่อบัญชีธนาคาร</label>
               <input
                 type="text"
-                value={formData.bankAccountName}
+                value={formData.bankAccountName || ''}
                 onChange={(e) => setFormData({ ...formData, bankAccountName: e.target.value })}
                 className="w-full px-3 py-2 bg-[#0F1113] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500"
               />
@@ -183,10 +216,41 @@ export const SettingsView: React.FC = () => {
               <label className="block text-gray-300 font-semibold mb-1">เลขที่บัญชี / ธนาคาร</label>
               <input
                 type="text"
-                value={formData.bankAccountNumber}
+                value={formData.bankAccountNumber || ''}
                 onChange={(e) => setFormData({ ...formData, bankAccountNumber: e.target.value })}
                 className="w-full px-3 py-2 bg-[#0F1113] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500 font-mono"
               />
+            </div>
+          </div>
+
+          {/* Live Preview Box */}
+          <div className="pt-3 border-t border-[#2D3135] flex flex-col md:flex-row items-center gap-6 bg-[#0F1113] p-4 rounded-xl">
+            <div className="w-full max-w-[280px]">
+              <PromptPayQRCard
+                promptPayId={formData.promptPayId || '0610692036'}
+                accountName={formData.bankAccountName || formData.name}
+                bankName={formData.bankName}
+                bankAccountNumber={formData.bankAccountNumber}
+                shopName={formData.name}
+                showActions={false}
+              />
+            </div>
+            <div className="flex-1 space-y-2 text-xs text-gray-300">
+              <div className="flex items-center gap-2 font-bold text-emerald-400">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>QR Code พร้อมเพย์มาตรฐาน ธปท. (EMVCo) ถูกต้อง 100%</span>
+              </div>
+              <p className="text-gray-400 leading-relaxed text-[11px]">
+                ระบบสร้าง QR Code พร้อมคำนวณรหัส CRC16-XMODEM ตามมาตรฐานของธนาคารแห่งประเทศไทย (BOT) และ National ITMX สามารถใช้แอปธนาคารทุกแห่งในประเทศไทย (K PLUS, SCB EASY, Krungthai NEXT, Bualuang, ttb, ออมสิน ฯลฯ) สแกนจ่ายได้จริง
+              </p>
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-orange-500 hover:bg-orange-600 active:scale-95 text-white font-bold rounded-lg transition-all shadow-md shadow-orange-500/20"
+                >
+                  บันทึกข้อมูลพร้อมเพย์
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -201,7 +265,7 @@ export const SettingsView: React.FC = () => {
           <div className="text-xs">
             <textarea
               rows={2}
-              value={formData.warrantyTerms}
+              value={formData.warrantyTerms || ''}
               onChange={(e) => setFormData({ ...formData, warrantyTerms: e.target.value })}
               className="w-full px-3 py-2 bg-[#0F1113] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500"
             />

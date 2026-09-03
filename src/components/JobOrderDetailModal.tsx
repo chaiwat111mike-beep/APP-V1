@@ -31,6 +31,7 @@ import {
 import { useGarage } from '../context/GarageContext';
 import { JobOrder, JobStatus, PaymentMethod, PaymentStatus, SparePart } from '../types';
 import { LineNotificationModal } from './LineNotificationModal';
+import { PromptPayQRModal } from './PromptPayQRModal';
 import {
   calculateJobBreakdown,
   getDurationDisplay,
@@ -38,6 +39,7 @@ import {
   toDateTimeLocalString,
   getQuickDeliveryPreset
 } from '../utils/jobCalculator';
+import { SparePartSearchSelect } from './SparePartSearchSelect';
 
 interface JobOrderDetailModalProps {
   jobId: string | null;
@@ -88,7 +90,11 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
   const [receivedDateInput, setReceivedDateInput] = useState<string>('');
   const [estimatedDeliveryInput, setEstimatedDeliveryInput] = useState<string>('');
 
+  const [stockError, setStockError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<boolean>(false);
+
   const [isLineModalOpen, setIsLineModalOpen] = useState<boolean>(false);
+  const [isPromptPayModalOpen, setIsPromptPayModalOpen] = useState<boolean>(false);
 
   // Sync state with active job on modal open or job change
   useEffect(() => {
@@ -147,10 +153,12 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
     if (!part) return;
 
     if (part.stockQty < partQuantity) {
-      alert(`สต็อกมีเพียง ${part.stockQty} ${part.unit} (ไม่พอสำหรับ ${partQuantity})`);
+      setStockError(`สต็อกมีเพียง ${part.stockQty} ${part.unit} (ไม่พอสำหรับ ${partQuantity})`);
+      setTimeout(() => setStockError(null), 4000);
       return;
     }
 
+    setStockError(null);
     addPartToJob(job.id, part, partQuantity);
     setSelectedPartId('');
     setPartQuantity(1);
@@ -338,7 +346,7 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
                   <label className="block text-gray-300 font-medium mb-1">วันที่และเวลารับรถ</label>
                   <input
                     type="datetime-local"
-                    value={receivedDateInput}
+                    value={receivedDateInput || ''}
                     onChange={(e) => setReceivedDateInput(e.target.value)}
                     className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 font-mono"
                   />
@@ -347,7 +355,7 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
                   <label className="block text-gray-300 font-medium mb-1">กำหนดส่งมอบรถ</label>
                   <input
                     type="datetime-local"
-                    value={estimatedDeliveryInput}
+                    value={estimatedDeliveryInput || ''}
                     onChange={(e) => setEstimatedDeliveryInput(e.target.value)}
                     className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 font-mono"
                   />
@@ -418,7 +426,7 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
                   {isEditingNotes ? (
                     <textarea
                       rows={2}
-                      value={techNotes}
+                      value={techNotes || ''}
                       onChange={(e) => setTechNotes(e.target.value)}
                       placeholder="บันทึกผลการตรวจสอบของช่าง..."
                       className="w-full p-2.5 bg-[#16191D] border border-[#2D3135] rounded-lg text-xs text-gray-200 focus:outline-none focus:border-orange-500"
@@ -445,44 +453,48 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
                   </div>
                 </div>
 
-                {/* Add Part Bar */}
-                <div className="flex flex-col sm:flex-row items-center gap-2 p-3 bg-[#16191D] rounded-lg border border-[#2D3135]">
-                  <div className="flex-1 w-full">
-                    <select
-                      value={selectedPartId}
-                      onChange={(e) => setSelectedPartId(e.target.value)}
-                      className="w-full px-3 py-2 bg-[#0F1113] border border-[#2D3135] rounded-lg text-xs text-gray-200 focus:outline-none focus:border-orange-500"
-                    >
-                      <option value="">-- เลือกอะไหล่จากคลังสต็อก --</option>
-                      {spareParts.map((part) => (
-                        <option key={part.id} value={part.id} disabled={part.stockQty <= 0}>
-                          [{part.partCode}] {part.name} - ฿{part.sellPrice.toLocaleString()} (คงเหลือ {part.stockQty} {part.unit})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-gray-400">จำนวน:</span>
-                      <input
-                        type="number"
-                        min="1"
-                        value={partQuantity}
-                        onChange={(e) => setPartQuantity(Math.max(1, Number(e.target.value)))}
-                        className="w-16 px-2 py-2 bg-[#0F1113] border border-[#2D3135] rounded-lg text-xs text-center text-gray-100 font-mono"
+                {/* Add Part Bar with smart searchable select */}
+                <div className="space-y-2">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 bg-[#16191D] rounded-xl border border-[#2D3135]">
+                    <div className="flex-1 min-w-0">
+                      <SparePartSearchSelect
+                        spareParts={spareParts}
+                        selectedPartId={selectedPartId}
+                        onSelectPart={(part) => setSelectedPartId(part ? part.id : '')}
+                        carBrandOrModel={`${job.carBrand} ${job.carModel}`.trim()}
+                        placeholder="🔍 ค้นหาอะไหล่ในสต็อก (ชื่อ, รหัส, รุ่นรถ, ยี่ห้อ)..."
                       />
                     </div>
 
-                    <button
-                      onClick={handleAddPart}
-                      disabled={!selectedPartId}
-                      className="flex-1 sm:flex-none px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-md shadow-orange-500/20"
-                    >
-                      <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                      <span>เบิกอะไหล่</span>
-                    </button>
+                    <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+                      <div className="flex items-center gap-1 bg-[#0F1113] border border-[#2D3135] rounded-xl px-2 py-1.5">
+                        <span className="text-[11px] text-gray-400">จำนวน:</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={partQuantity}
+                          onChange={(e) => setPartQuantity(Math.max(1, Number(e.target.value)))}
+                          className="w-12 bg-transparent text-xs text-center text-gray-100 font-mono focus:outline-none font-bold"
+                        />
+                      </div>
+
+                      <button
+                        onClick={handleAddPart}
+                        disabled={!selectedPartId}
+                        className="flex-1 sm:flex-none px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md shadow-orange-500/20 active:scale-95 shrink-0"
+                      >
+                        <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                        <span>เบิกอะไหล่</span>
+                      </button>
+                    </div>
                   </div>
+
+                  {stockError && (
+                    <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2 animate-in fade-in">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{stockError}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Parts Table */}
@@ -741,6 +753,16 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
                       <option value="insurance">🛡️ เคลมประกันภัย (Insurance)</option>
                     </select>
                   </div>
+
+                  {/* Open PromptPay QR Button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsPromptPayModalOpen(true)}
+                    className="w-full mt-2 py-2.5 px-3 bg-gradient-to-r from-blue-700 to-blue-600 hover:from-blue-600 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2 transition-all active:scale-95"
+                  >
+                    <QrCode className="w-4 h-4 text-blue-200" />
+                    <span>สร้าง QR พร้อมเพย์ สแกนจ่าย (฿{financials.grandTotal.toLocaleString()})</span>
+                  </button>
                 </div>
               </div>
 
@@ -750,17 +772,32 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
                   <p className="text-xs font-semibold text-red-400">ลบใบสั่งซ่อมนี้</p>
                   <p className="text-[10px] text-gray-400">คืนช่องซ่อมและลบประวัติงาน</p>
                 </div>
-                <button
-                  onClick={() => {
-                    if (window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบใบสั่งซ่อมนี้?')) {
-                      deleteJobOrder(job.id);
-                      onClose();
-                    }
-                  }}
-                  className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white rounded-lg text-xs font-bold transition-colors"
-                >
-                  ลบรายการ
-                </button>
+                {confirmDelete ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        deleteJobOrder(job.id);
+                        onClose();
+                      }}
+                      className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-colors shadow-sm"
+                    >
+                      ยืนยันลบจริง
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(false)}
+                      className="px-2.5 py-1.5 bg-[#252B32] hover:bg-[#2D3135] text-gray-300 rounded-lg text-xs transition-colors"
+                    >
+                      ยกเลิก
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmDelete(true)}
+                    className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white rounded-lg text-xs font-bold transition-colors"
+                  >
+                    ลบรายการ
+                  </button>
+                )}
               </div>
 
             </div>
@@ -778,6 +815,17 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
       onClose={() => setIsLineModalOpen(false)}
       job={job}
     />
+
+    {/* PromptPay QR Code Modal */}
+    {job && (
+      <PromptPayQRModal
+        isOpen={isPromptPayModalOpen}
+        onClose={() => setIsPromptPayModalOpen(false)}
+        initialJobId={job.id}
+        initialAmount={financials.grandTotal}
+        initialReference={`ใบสั่งซ่อม #${job.jobNo || job.id.slice(-4)} (${job.licensePlate})`}
+      />
+    )}
   </>
   );
 };

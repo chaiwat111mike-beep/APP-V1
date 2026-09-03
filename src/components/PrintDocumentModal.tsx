@@ -27,6 +27,7 @@ import { exportElementToPdf, printElementViaIframe } from '../services/pdfServic
 import { GarageLogo } from './GarageLogo';
 import { LineNotificationModal } from './LineNotificationModal';
 import { calculateJobBreakdown, formatThaiDateTime, formatThaiDate } from '../utils/jobCalculator';
+import { generatePromptPayQRCodeDataURL } from '../utils/promptpay';
 
 interface PrintDocumentModalProps {
   job: JobOrder | null;
@@ -48,13 +49,35 @@ export const PrintDocumentModal: React.FC<PrintDocumentModalProps> = ({
   const [showSuccessToast, setShowSuccessToast] = useState<string | null>(null);
   const [isLineModalOpen, setIsLineModalOpen] = useState(false);
   const [zoomScale, setZoomScale] = useState<number>(100);
+  const [promptPayQrUrl, setPromptPayQrUrl] = useState<string>('');
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && job) {
       setSelectedDocType(initialDocType);
       setShowSuccessToast(null);
+
+      const calculated = calculateJobBreakdown({
+        parts: job.partsUsed || [],
+        laborFee: job.laborFee || 0,
+        otherFee: job.otherFee || 0,
+        discount: job.discount || 0,
+        discountType: job.discountType || 'amount',
+        discountPercent: job.discountPercent || 0,
+        enableVat: (job.vatPercent ?? 7) > 0,
+        vatPercent: job.vatPercent ?? 7,
+        depositAmount: job.depositAmount || job.paidAmount || 0,
+      });
+
+      // Generate offline EMVCo PromptPay QR Code
+      const ppTarget = garageProfile.promptPayId || garageProfile.mechanicPhone || garageProfile.phone || '0610692036';
+      generatePromptPayQRCodeDataURL(ppTarget, calculated.grandTotal > 0 ? calculated.grandTotal : undefined, {
+        width: 180,
+        margin: 2,
+      })
+        .then((url) => setPromptPayQrUrl(url))
+        .catch((err) => console.error('Failed to generate doc QR:', err));
     }
-  }, [isOpen, initialDocType]);
+  }, [isOpen, initialDocType, job, garageProfile]);
 
   if (!isOpen || !job) return null;
 
@@ -435,21 +458,37 @@ export const PrintDocumentModal: React.FC<PrintDocumentModalProps> = ({
               {/* Financial Calculation Summary & Payment Info */}
               <div className="flex justify-between items-start text-xs pt-1 gap-4 flex-wrap sm:flex-nowrap">
                 <div className="max-w-xs space-y-2">
-                  {/* PromptPay & Bank Details */}
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-300 space-y-1">
-                    <span className="font-bold text-slate-900 block flex items-center gap-1.5">
-                      <QrCode className="w-3.5 h-3.5 text-slate-800" />
-                      <span>ช่องทางชำระเงิน พร้อมเพย์ (PromptPay)</span>
-                    </span>
-                    <p className="text-slate-800">
-                      เลขพร้อมเพย์: <strong className="text-slate-950 font-mono">{garageProfile.promptPayId || phone}</strong>
-                    </p>
-                    <p className="text-slate-700">
-                      ชื่อบัญชี: <strong>{garageProfile.bankAccountName || 'อู่สงกรานต์ (ช่างไมค์)'}</strong>
-                    </p>
-                    <p className="text-slate-600 text-[11px]">
-                      {garageProfile.bankName} เลขที่ {garageProfile.bankAccountNumber || garageProfile.bankAccount}
-                    </p>
+                  {/* PromptPay & Bank Details with Real QR Code */}
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-300 flex items-start gap-3">
+                    {/* PromptPay QR Code Image */}
+                    {promptPayQrUrl && (
+                      <div className="shrink-0 text-center bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm">
+                        <img
+                          src={promptPayQrUrl}
+                          alt="PromptPay QR Code"
+                          className="w-20 h-20 object-contain mx-auto"
+                        />
+                        <span className="text-[9px] text-[#0D3880] font-black block mt-0.5">
+                          พร้อมเพย์ (QR)
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="space-y-0.5 text-[11px] flex-1">
+                      <span className="font-bold text-slate-900 block flex items-center gap-1.5 text-xs">
+                        <QrCode className="w-3.5 h-3.5 text-[#0D3880]" />
+                        <span>ชำระเงินผ่าน พร้อมเพย์</span>
+                      </span>
+                      <p className="text-slate-800">
+                        เลขพร้อมเพย์: <strong className="text-slate-950 font-mono text-xs">{garageProfile.promptPayId || phone}</strong>
+                      </p>
+                      <p className="text-slate-700">
+                        ชื่อบัญชี: <strong>{garageProfile.bankAccountName || 'อู่สงกรานต์ (ช่างไมค์)'}</strong>
+                      </p>
+                      <p className="text-slate-600 text-[10px] pt-0.5">
+                        {garageProfile.bankName} เลขที่ {garageProfile.bankAccountNumber || garageProfile.bankAccount}
+                      </p>
+                    </div>
                   </div>
 
                   <p className="text-[11px] text-slate-600 leading-relaxed">

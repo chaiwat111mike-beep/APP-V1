@@ -23,8 +23,8 @@ import {
 import { useGarage } from '../context/GarageContext';
 import { SparePart } from '../types';
 import { GoogleSheetsSyncModal } from './GoogleSheetsSyncModal';
-import { downloadCsvFile, getStoredSpreadsheetId } from '../services/googleSheetsService';
-import { generateLowStockAlertMessage, getLineShareUrl, DEFAULT_LINE_ID } from '../services/lineService';
+import { downloadCsvFile, getStoredSpreadsheetId, isRealGoogleSpreadsheetId } from '../services/googleSheetsService';
+import { generateLowStockAlertMessage, getLineShareUrl, openLineShare, DEFAULT_LINE_ID } from '../services/lineService';
 
 export const InventoryView: React.FC = () => {
   const {
@@ -49,6 +49,7 @@ export const InventoryView: React.FC = () => {
   const [editPart, setEditPart] = useState<SparePart | null>(null);
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+  const [deleteConfirmPart, setDeleteConfirmPart] = useState<{ id: string; name: string } | null>(null);
 
   // New Part Form State
   const [partCode, setPartCode] = useState('');
@@ -99,7 +100,7 @@ export const InventoryView: React.FC = () => {
   const totalInventoryValue = spareParts.reduce((sum, p) => sum + (p.stockQty * p.costPrice), 0);
   const totalSellValue = spareParts.reduce((sum, p) => sum + (p.stockQty * p.sellPrice), 0);
 
-  const inventorySheetId = getStoredSpreadsheetId('inventory') || garageProfile.googleSheetsInventoryId;
+  const inventorySheetId = getStoredSpreadsheetId('inventory') || (isRealGoogleSpreadsheetId(garageProfile.googleSheetsInventoryId) ? garageProfile.googleSheetsInventoryId : null);
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,10 +181,10 @@ export const InventoryView: React.FC = () => {
   };
 
   // Quick notify low stock to LINE
-  const handleSendLowStockLine = () => {
+  const handleSendLowStockLine = async () => {
     if (lowStockParts.length === 0) return;
     const msg = generateLowStockAlertMessage(lowStockParts, garageProfile);
-    window.open(getLineShareUrl(msg), '_blank');
+    await openLineShare(msg);
   };
 
   // Download CSV
@@ -478,11 +479,7 @@ export const InventoryView: React.FC = () => {
                           </button>
 
                           <button
-                            onClick={() => {
-                              if (confirm(`คุณต้องการลบอะไหล่ "${part.name}" หรือไม่?`)) {
-                                deleteSparePart(part.id);
-                              }
-                            }}
+                            onClick={() => setDeleteConfirmPart({ id: part.id, name: part.name })}
                             title="ลบรายการ"
                             className="p-1.5 rounded-lg bg-[#0F1113] hover:bg-red-500/20 text-gray-400 hover:text-red-400 border border-[#2D3135] transition-all"
                           >
@@ -743,7 +740,7 @@ export const InventoryView: React.FC = () => {
                   <input
                     type="text"
                     required
-                    value={editPart.partCode}
+                    value={editPart.partCode || ''}
                     onChange={(e) => setEditPart({ ...editPart, partCode: e.target.value.toUpperCase() })}
                     className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white font-mono focus:border-orange-500 focus:outline-none"
                   />
@@ -751,7 +748,7 @@ export const InventoryView: React.FC = () => {
                 <div>
                   <label className="block text-gray-300 font-semibold mb-1">หมวดหมู่</label>
                   <select
-                    value={editPart.category}
+                    value={editPart.category || 'other'}
                     onChange={(e) => setEditPart({ ...editPart, category: e.target.value as any })}
                     className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white focus:border-orange-500 focus:outline-none"
                   >
@@ -771,7 +768,7 @@ export const InventoryView: React.FC = () => {
                 <input
                   type="text"
                   required
-                  value={editPart.name}
+                  value={editPart.name || ''}
                   onChange={(e) => setEditPart({ ...editPart, name: e.target.value })}
                   className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white focus:border-orange-500 focus:outline-none"
                 />
@@ -782,7 +779,7 @@ export const InventoryView: React.FC = () => {
                   <label className="block text-gray-300 font-semibold mb-1">ยี่ห้อ</label>
                   <input
                     type="text"
-                    value={editPart.brand}
+                    value={editPart.brand || ''}
                     onChange={(e) => setEditPart({ ...editPart, brand: e.target.value })}
                     className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white focus:border-orange-500 focus:outline-none"
                   />
@@ -791,7 +788,7 @@ export const InventoryView: React.FC = () => {
                   <label className="block text-gray-300 font-semibold mb-1">รุ่นรถยนต์ที่รองรับ</label>
                   <input
                     type="text"
-                    value={editPart.compatibleModels}
+                    value={editPart.compatibleModels || ''}
                     onChange={(e) => setEditPart({ ...editPart, compatibleModels: e.target.value })}
                     className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white focus:border-orange-500 focus:outline-none"
                   />
@@ -804,7 +801,7 @@ export const InventoryView: React.FC = () => {
                   <input
                     type="number"
                     min="0"
-                    value={editPart.stockQty}
+                    value={editPart.stockQty ?? 0}
                     onChange={(e) => setEditPart({ ...editPart, stockQty: Number(e.target.value) })}
                     className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white font-mono focus:border-orange-500 focus:outline-none"
                   />
@@ -814,7 +811,7 @@ export const InventoryView: React.FC = () => {
                   <input
                     type="number"
                     min="1"
-                    value={editPart.minStockQty}
+                    value={editPart.minStockQty ?? 1}
                     onChange={(e) => setEditPart({ ...editPart, minStockQty: Number(e.target.value) })}
                     className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white font-mono focus:border-orange-500 focus:outline-none"
                   />
@@ -824,7 +821,7 @@ export const InventoryView: React.FC = () => {
                   <input
                     type="number"
                     min="0"
-                    value={editPart.costPrice}
+                    value={editPart.costPrice ?? 0}
                     onChange={(e) => setEditPart({ ...editPart, costPrice: Number(e.target.value) })}
                     className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white font-mono focus:border-orange-500 focus:outline-none"
                   />
@@ -834,7 +831,7 @@ export const InventoryView: React.FC = () => {
                   <input
                     type="number"
                     min="0"
-                    value={editPart.sellPrice}
+                    value={editPart.sellPrice ?? 0}
                     onChange={(e) => setEditPart({ ...editPart, sellPrice: Number(e.target.value) })}
                     className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white font-mono text-emerald-400 font-bold focus:border-orange-500 focus:outline-none"
                   />
@@ -867,6 +864,45 @@ export const InventoryView: React.FC = () => {
         onClose={() => setIsSheetsModalOpen(false)}
         targetTab="inventory"
       />
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmPart && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-[#16191D] border border-red-500/30 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">ยืนยันการลบอะไหล่</h3>
+                <p className="text-xs text-gray-300 font-medium truncate max-w-[260px]">{deleteConfirmPart.name}</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-400">
+              คุณแน่ใจหรือไม่ว่าต้องการลบรายการอะไหล่นี้ออกจากสต็อก? การกระทำนี้ไม่สามารถย้อนกลับได้
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#2D3135]">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmPart(null)}
+                className="px-4 py-2 bg-[#252B32] hover:bg-[#2D3135] text-gray-300 rounded-xl text-xs font-semibold transition-all"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteSparePart(deleteConfirmPart.id);
+                  setDeleteConfirmPart(null);
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-red-900/30"
+              >
+                ยืนยันลบอะไหล่
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

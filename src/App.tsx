@@ -78,6 +78,8 @@ const GarageAppInner: React.FC = () => {
         onOpenNewJobModal={handleOpenNewJob}
         onOpenAuthModal={() => setIsLoginModalOpen(true)}
         onSelectJob={handleSelectJob}
+        activeTab={currentTab}
+        setActiveTab={(tab) => setCurrentTab(tab)}
       />
 
       {/* Main Layout Body */}

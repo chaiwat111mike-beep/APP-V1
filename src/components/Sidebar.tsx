@@ -12,7 +12,8 @@ import {
   CheckCircle2,
   Calendar,
   Sparkles,
-  Flame
+  Flame,
+  X
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { GarageLogo } from './GarageLogo';
@@ -20,10 +21,20 @@ import { GarageLogo } from './GarageLogo';
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  onOpenNewJobModal: () => void;
+  onOpenNewJobModal?: () => void;
+  isSidebarOpen?: boolean;
+  setIsSidebarOpen?: (open: boolean) => void;
+  activeJobCount?: number;
+  lowStockCount?: number;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onOpenNewJobModal }) => {
+export const Sidebar: React.FC<SidebarProps> = ({
+  activeTab,
+  setActiveTab,
+  onOpenNewJobModal,
+  isSidebarOpen,
+  setIsSidebarOpen,
+}) => {
   const { jobOrders, spareParts, serviceBays } = useGarage();
 
   const activeJobs = jobOrders.filter((j) => j.status !== 'delivered' && j.status !== 'completed').length;
@@ -75,8 +86,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onOpe
     },
   ];
 
-  return (
-    <aside className="w-64 bg-[#16191D] border-r border-[#2D3135] flex flex-col justify-between p-4 shrink-0 hidden md:flex min-h-[calc(100vh-4rem)]">
+  const renderNavContent = () => (
+    <>
       <div className="space-y-5">
         {/* Navigation list */}
         <nav className="space-y-1">
@@ -87,7 +98,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onOpe
               <button
                 key={item.id}
                 id={`sidebar-nav-${item.id}`}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  setIsSidebarOpen?.(false);
+                }}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm transition-all text-left ${
                   isActive
                     ? 'bg-orange-500/10 border-l-4 border-orange-500 text-orange-400 font-bold'
@@ -115,10 +129,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onOpe
               <Car className="w-3.5 h-3.5 text-orange-400" />
               <span>สถานะช่องซ่อมปัจจุบัน</span>
             </span>
-            <span className="text-orange-400 font-bold font-mono">{occupiedBays}/6</span>
+            <span className="text-orange-400 font-bold font-mono">{occupiedBays}/{serviceBays.length}</span>
           </div>
 
-          <div className="grid grid-cols-6 gap-1">
+          <div className="grid grid-cols-3 gap-1.5">
             {serviceBays.map((bay) => (
               <div
                 key={bay.id}
@@ -167,6 +181,41 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onOpe
           <span className="text-[10px] bg-[#06C755] text-white px-1.5 py-0.5 rounded font-medium">แชท</span>
         </a>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop Persistent Sidebar */}
+      <aside className="w-64 bg-[#16191D] border-r border-[#2D3135] flex flex-col justify-between p-4 shrink-0 hidden md:flex min-h-[calc(100vh-4rem)]">
+        {renderNavContent()}
+      </aside>
+
+      {/* Mobile Drawer (Slide-over) */}
+      {isSidebarOpen && (
+        <div className="fixed inset-0 z-50 md:hidden flex animate-in fade-in duration-200">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={() => setIsSidebarOpen?.(false)}
+          />
+
+          {/* Drawer Content */}
+          <div className="relative w-72 max-w-[85vw] bg-[#16191D] border-r border-[#2D3135] h-full flex flex-col justify-between p-4 shadow-2xl z-10 overflow-y-auto animate-in slide-in-from-left duration-200">
+            <div className="flex items-center justify-between pb-3 mb-2 border-b border-[#2D3135]">
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">เมนูหลัก</span>
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen?.(false)}
+                className="p-1.5 rounded-lg bg-[#0F1113] border border-[#2D3135] text-gray-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {renderNavContent()}
+          </div>
+        </div>
+      )}
+    </>
   );
 };

@@ -1,10 +1,40 @@
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 
 export interface PdfExportOptions {
   filename?: string;
   quality?: number;
   orientation?: 'portrait' | 'landscape';
+}
+
+/**
+ * Helper to recursively convert any OKLCH/OKLAB colors in styles to RGB/HEX fallback
+ */
+function sanitizeColorsInClonedDoc(doc: Document) {
+  const allElements = doc.querySelectorAll('*');
+  const tempCanvas = doc.createElement('canvas');
+  const ctx = tempCanvas.getContext('2d');
+
+  allElements.forEach((el) => {
+    const htmlEl = el as HTMLElement;
+    if (!htmlEl.style) return;
+
+    // Convert common color properties if they have unsupported formats
+    const colorProps = ['color', 'backgroundColor', 'borderColor', 'outlineColor'];
+    colorProps.forEach((prop) => {
+      const val = htmlEl.style.getPropertyValue(prop);
+      if (val && (val.includes('oklch') || val.includes('oklab'))) {
+        try {
+          if (ctx) {
+            ctx.fillStyle = val;
+            htmlEl.style.setProperty(prop, ctx.fillStyle);
+          }
+        } catch {
+          // Ignore fallback if conversion fails
+        }
+      }
+    });
+  });
 }
 
 /**
@@ -23,7 +53,7 @@ export const exportElementToPdf = async (
   const filename = options.filename || `Songkarn-Garage-Doc-${Date.now()}.pdf`;
 
   try {
-    // Generate high resolution canvas with optimal print settings
+    // Generate high resolution canvas with html2canvas-pro supporting modern CSS (oklch, color-mix, etc.)
     const canvas = await html2canvas(targetElement, {
       scale: 2.5, // Crisp high-DPI rendering for print
       useCORS: true,
@@ -32,6 +62,9 @@ export const exportElementToPdf = async (
       backgroundColor: '#ffffff',
       windowWidth: targetElement.scrollWidth || 1024,
       onclone: (clonedDoc) => {
+        // Sanitize any residual modern colors just in case
+        sanitizeColorsInClonedDoc(clonedDoc);
+
         // Ensure cloned element is visible and properly styled as pure white page
         const clonedTarget = typeof elementId === 'string' 
           ? clonedDoc.getElementById(elementId) 

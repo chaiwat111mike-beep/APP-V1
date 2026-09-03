@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "version": "1.0.0",
+  "entities": {
+    "job_orders": {
+      "title": "Job Order",
+      "description": "Vehicle repair orders and service tickets",
+      "type": "object",
+      "required": ["id", "jobNo", "customerName", "customerPhone", "licensePlate", "carBrand", "carModel", "status", "totalAmount"],
+      "properties": {
+        "id": { "type": "string" },
+        "jobNo": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerAddress": { "type": "string" },
+        "licensePlate": { "type": "string" },
+        "carBrand": { "type": "string" },
+        "carModel": { "type": "string" },
+        "carYear": { "type": "string" },
+        "carColor": { "type": "string" },
+        "vinNumber": { "type": "string" },
+        "mileage": { "type": "number" },
+        "issueDescription": { "type": "string" },
+        "technicianNotes": { "type": "string" },
+        "status": { "type": "string" },
+        "priority": { "type": "string" },
+        "laborFee": { "type": "number" },
+        "otherFee": { "type": "number" },
+        "discount": { "type": "number" },
+        "vatPercent": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "paymentStatus": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "paidAmount": { "type": "number" },
+        "depositAmount": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "spare_parts": {
+      "title": "Spare Part",
+      "description": "Inventory spare parts catalog and stock levels",
+      "type": "object",
+      "required": ["id", "partCode", "name", "category", "stockQty", "costPrice", "sellPrice"],
+      "properties": {
+        "id": { "type": "string" },
+        "partCode": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "brand": { "type": "string" },
+        "compatibleModels": { "type": "string" },
+        "unit": { "type": "string" },
+        "stockQty": { "type": "number" },
+        "minStockQty": { "type": "number" },
+        "costPrice": { "type": "number" },
+        "sellPrice": { "type": "number" },
+        "locationRack": { "type": "string" },
+        "supplier": { "type": "string" },
+        "lastRestockedAt": { "type": "string" }
+      }
+    },
+    "customers": {
+      "title": "Customer",
+      "description": "Customer profiles, contacts, and vehicle history",
+      "type": "object",
+      "required": ["id", "name", "phone", "vehicles"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "lineId": { "type": "string" },
+        "totalSpent": { "type": "number" },
+        "totalVisits": { "type": "number" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "garage_profile": {
+      "title": "Garage Profile",
+      "description": "Garage business settings and configuration",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "promptPayId": { "type": "string" },
+        "bankAccountNumber": { "type": "string" },
+        "bankAccountName": { "type": "string" },
+        "googleSheetsInventoryId": { "type": "string" },
+        "googleSheetsCustomersId": { "type": "string" }
+      }
+    }
+  }
+}

@@ -35,6 +35,7 @@ import {
   toDateTimeLocalString,
   formatThaiDateTime
 } from '../utils/jobCalculator';
+import { SparePartSearchSelect } from './SparePartSearchSelect';
 
 interface JobOrderFormModalProps {
   isOpen: boolean;
@@ -141,6 +142,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
   const [enableVat, setEnableVat] = useState<boolean>(true);
   const [vatPercent, setVatPercent] = useState<number>(garageProfile.vatPercent || 7);
   const [depositAmount, setDepositAmount] = useState<number>(0);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Live calculation breakdown
   const financials = useMemo(() => {
@@ -296,9 +298,10 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!customerName || !customerPhone || !licensePlate || !issueDescription) {
-      alert('กรุณากรอกชื่อลูกค้า, เบอร์โทรศัพท์, ทะเบียนรถ, และอาการเสียที่แจ้งให้ครบถ้วน');
+      setFormError('กรุณากรอกชื่อลูกค้า, เบอร์โทรศัพท์, ทะเบียนรถ, และอาการเสียที่แจ้งให้ครบถ้วน');
       return;
     }
+    setFormError(null);
 
     const selectedMech = mechanics.find((m) => m.id === mechanicId);
 
@@ -413,7 +416,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
               <div className="flex items-center gap-2">
                 {/* Prefix Selector */}
                 <select
-                  value={jobPrefix}
+                  value={jobPrefix || 'JOB'}
                   onChange={(e) => {
                     setJobPrefix(e.target.value);
                     setIsManualJobNo(false);
@@ -428,7 +431,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
 
                 {/* Format Format (Monthly vs Daily) */}
                 <select
-                  value={jobFormat}
+                  value={jobFormat || 'monthly'}
                   onChange={(e) => {
                     setJobFormat(e.target.value as 'monthly' | 'daily');
                     setIsManualJobNo(false);
@@ -444,7 +447,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                   <input
                     type="text"
                     required
-                    value={customJobNo}
+                    value={customJobNo || ''}
                     onChange={(e) => {
                       setCustomJobNo(e.target.value);
                       setIsManualJobNo(true);
@@ -487,7 +490,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                   <input
                     type="datetime-local"
                     required
-                    value={receivedDate}
+                    value={receivedDate || ''}
                     onChange={(e) => setReceivedDate(e.target.value)}
                     className="w-full px-2.5 py-1.5 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500 font-mono text-xs"
                   />
@@ -503,7 +506,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                   </label>
                   <input
                     type="datetime-local"
-                    value={estimatedCompletionDate}
+                    value={estimatedCompletionDate || ''}
                     onChange={(e) => setEstimatedCompletionDate(e.target.value)}
                     className="w-full px-2.5 py-1.5 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500 font-mono text-xs"
                   />
@@ -586,7 +589,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                     type="text"
                     required
                     placeholder="เช่น 089-111-2233"
-                    value={customerPhone}
+                    value={customerPhone || ''}
                     onChange={(e) => handlePhoneChange(e.target.value)}
                     className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-orange-500 font-mono"
                   />
@@ -600,7 +603,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                     type="text"
                     required
                     placeholder="เช่น คุณสมชาย เจริญสุข"
-                    value={customerName}
+                    value={customerName || ''}
                     onChange={(e) => setCustomerName(e.target.value)}
                     className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-orange-500"
                   />
@@ -611,7 +614,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                   <input
                     type="text"
                     placeholder="ที่อยู่ลูกค้า หรือ LINE ID เพื่อแจ้งเตือน"
-                    value={customerAddress}
+                    value={customerAddress || ''}
                     onChange={(e) => setCustomerAddress(e.target.value)}
                     className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-orange-500"
                   />
@@ -635,7 +638,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                     type="text"
                     required
                     placeholder="เช่น 3ขก 8899 กทม."
-                    value={licensePlate}
+                    value={licensePlate || ''}
                     onChange={(e) => handlePlateChange(e.target.value)}
                     className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-orange-400 font-bold placeholder-gray-500 focus:outline-none focus:border-orange-500 uppercase font-mono"
                   />
@@ -644,7 +647,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                 <div>
                   <label className="block text-gray-300 font-medium mb-1">ยี่ห้อรถยนต์</label>
                   <select
-                    value={carBrand}
+                    value={carBrand || 'Toyota'}
                     onChange={(e) => setCarBrand(e.target.value)}
                     className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500"
                   >
@@ -668,7 +671,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                   <input
                     type="text"
                     placeholder="เช่น Revo, Civic, D-Max"
-                    value={carModel}
+                    value={carModel || ''}
                     onChange={(e) => setCarModel(e.target.value)}
                     className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-orange-500"
                   />
@@ -679,7 +682,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                   <input
                     type="number"
                     placeholder="45000"
-                    value={mileage}
+                    value={mileage ?? 0}
                     onChange={(e) => setMileage(Number(e.target.value))}
                     className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500 font-mono"
                   />
@@ -691,14 +694,14 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                     <input
                       type="text"
                       placeholder="ปี 2022"
-                      value={carYear}
+                      value={carYear || ''}
                       onChange={(e) => setCarYear(e.target.value)}
                       className="w-1/2 px-2.5 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 text-xs"
                     />
                     <input
                       type="text"
                       placeholder="สีบรอนซ์"
-                      value={carColor}
+                      value={carColor || ''}
                       onChange={(e) => setCarColor(e.target.value)}
                       className="w-1/2 px-2.5 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 text-xs"
                     />
@@ -710,7 +713,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                   <input
                     type="text"
                     placeholder="MHFBG32G..."
-                    value={vinNumber}
+                    value={vinNumber || ''}
                     onChange={(e) => setVinNumber(e.target.value)}
                     className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 uppercase font-mono text-xs"
                   />
@@ -736,7 +739,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                   required
                   rows={2}
                   placeholder="ระบุอาการ เช่น เปลี่ยนถ่ายน้ำมันเครื่องสังเคราะห์แท้, มีเสียงดังที่ล้อหน้าเวลาเบรก, แอร์ไม่เย็น..."
-                  value={issueDescription}
+                  value={issueDescription || ''}
                   onChange={(e) => setIssueDescription(e.target.value)}
                   className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-orange-500"
                 />
@@ -746,7 +749,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                 <div>
                   <label className="block text-gray-300 font-medium mb-1">ช่องซ่อมที่มอบหมาย</label>
                   <select
-                    value={bayNumber}
+                    value={bayNumber ?? 1}
                     onChange={(e) => setBayNumber(Number(e.target.value))}
                     className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500"
                   >
@@ -761,7 +764,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                 <div>
                   <label className="block text-gray-300 font-medium mb-1">ช่างผู้รับผิดชอบ</label>
                   <select
-                    value={mechanicId}
+                    value={mechanicId || ''}
                     onChange={(e) => setMechanicId(e.target.value)}
                     className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500"
                   >
@@ -777,7 +780,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                 <div>
                   <label className="block text-gray-300 font-medium mb-1">ความเร่งด่วน</label>
                   <select
-                    value={priority}
+                    value={priority || 'normal'}
                     onChange={(e) => setPriority(e.target.value as JobPriority)}
                     className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500"
                   >
@@ -835,37 +838,37 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                 </button>
               </label>
 
-              {/* Add from inventory dropdown */}
-              <div className="flex flex-col sm:flex-row items-center gap-2">
-                <select
-                  value={selectedPartId}
-                  onChange={(e) => setSelectedPartId(e.target.value)}
-                  className="w-full sm:flex-1 px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-xs text-gray-100 focus:outline-none focus:border-orange-500"
-                >
-                  <option value="">-- เลือกอะไหล่จากคลังสต็อก --</option>
-                  {spareParts.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      [{p.partCode}] {p.name} - ฿{p.sellPrice.toLocaleString()} (คงเหลือ {p.stockQty} {p.unit})
-                    </option>
-                  ))}
-                </select>
-
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <input
-                    type="number"
-                    min="1"
-                    value={partQtyToAdd}
-                    onChange={(e) => setPartQtyToAdd(Math.max(1, Number(e.target.value)))}
-                    placeholder="จำนวน"
-                    className="w-20 px-2.5 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-xs text-gray-100 font-mono text-center focus:outline-none focus:border-orange-500"
+              {/* Add from inventory with smart search select */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <SparePartSearchSelect
+                    spareParts={spareParts}
+                    selectedPartId={selectedPartId}
+                    onSelectPart={(part) => setSelectedPartId(part ? part.id : '')}
+                    onOpenCustomModal={() => setShowCustomPartInput(true)}
+                    carBrandOrModel={`${carBrand} ${carModel}`.trim()}
+                    placeholder="🔍 พิมพ์ค้นหาอะไหล่, รหัส, ยี่ห้อ, หรือเลือกรุ่นรถ..."
                   />
+                </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+                  <div className="flex items-center gap-1 bg-[#16191D] border border-[#2D3135] rounded-xl px-2 py-1">
+                    <span className="text-[11px] text-gray-400">จำนวน:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={partQtyToAdd}
+                      onChange={(e) => setPartQtyToAdd(Math.max(1, Number(e.target.value)))}
+                      className="w-14 bg-transparent text-xs text-gray-100 font-mono text-center focus:outline-none font-bold"
+                    />
+                  </div>
                   <button
                     type="button"
                     onClick={handleAddInventoryPart}
                     disabled={!selectedPartId}
-                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1 shrink-0"
+                    className="px-4 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shrink-0 shadow-md shadow-orange-500/20 active:scale-95"
                   >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus className="w-3.5 h-3.5 stroke-[3]" />
                     <span>เพิ่มอะไหล่</span>
                   </button>
                 </div>
@@ -882,7 +885,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                     <input
                       type="text"
                       placeholder="ชื่ออะไหล่ / งานซับนอก"
-                      value={customPartName}
+                      value={customPartName || ''}
                       onChange={(e) => setCustomPartName(e.target.value)}
                       className="sm:col-span-2 px-2.5 py-1.5 bg-[#0F1113] border border-[#2D3135] rounded-lg text-gray-100"
                     />
@@ -1047,7 +1050,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                     <label className="block text-gray-300 font-medium mb-1">รายละเอียดค่าใช้จ่ายอื่นๆ</label>
                     <input
                       type="text"
-                      value={otherFeeDescription}
+                      value={otherFeeDescription || ''}
                       onChange={(e) => setOtherFeeDescription(e.target.value)}
                       placeholder="เช่น ค่าโรงกลึง, ค่าลากรถ, อัดบูช..."
                       className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-gray-100 focus:outline-none focus:border-orange-500"
@@ -1267,6 +1270,13 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
               </div>
             </div>
           </div>
+
+          {formError && (
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2 animate-in fade-in">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span className="font-semibold">{formError}</span>
+            </div>
+          )}
 
           {/* Modal Actions */}
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#2D3135]">

@@ -12,10 +12,13 @@ import {
   AlertCircle,
   Car,
   Download,
-  Filter
+  Filter,
+  Maximize2
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { JobOrder, PaymentMethod, PaymentStatus } from '../types';
+import { PromptPayQRCard } from './PromptPayQRCard';
+import { PromptPayQRModal } from './PromptPayQRModal';
 
 interface BillingReportViewProps {
   onSelectJob: (jobId: string) => void;
@@ -29,6 +32,7 @@ export const BillingReportView: React.FC<BillingReportViewProps> = ({
   const { jobOrders, garageProfile, updateJobPayment } = useGarage();
   const [filterPayment, setFilterPayment] = useState<string>('all');
   const [selectedInvoice, setSelectedInvoice] = useState<JobOrder | null>(jobOrders[0] || null);
+  const [isPromptPayModalOpen, setIsPromptPayModalOpen] = useState<boolean>(false);
 
   const filteredJobs = jobOrders.filter((job) => {
     if (filterPayment === 'all') return true;
@@ -241,31 +245,39 @@ export const BillingReportView: React.FC<BillingReportViewProps> = ({
                 </div>
               </div>
 
-              {/* PromptPay QR Code Display Box */}
-              <div className="p-4 bg-white rounded-xl text-slate-950 text-center space-y-2.5 shadow-lg">
-                <div className="flex items-center justify-center gap-2 text-slate-900 font-bold text-xs">
-                  <QrCode className="w-4 h-4 text-blue-800" />
-                  <span>สแกน QR Code ชำระเงิน (PromptPay)</span>
+              {/* PromptPay QR Code Display Card */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-300 flex items-center gap-1.5">
+                    <QrCode className="w-3.5 h-3.5 text-blue-400" />
+                    <span>QR Code ชำระเงิน (PromptPay)</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsPromptPayModalOpen(true)}
+                    className="text-[11px] text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <Maximize2 className="w-3 h-3" />
+                    <span>ขยายเต็มจอ</span>
+                  </button>
                 </div>
 
-                <div className="w-36 h-36 mx-auto bg-slate-100 rounded-lg p-2 border border-slate-300 flex items-center justify-center">
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=PROMPTPAY|${garageProfile.promptPayId}|${selectedInvoice.totalAmount}`}
-                    alt="PromptPay QR Code"
-                    className="w-full h-full object-contain"
-                  />
-                </div>
-
-                <div className="text-[11px] text-slate-600 font-medium">
-                  <p>พร้อมเพย์: <strong className="text-slate-900 font-mono">{garageProfile.promptPayId}</strong></p>
-                  <p>{garageProfile.bankAccountName}</p>
-                </div>
+                <PromptPayQRCard
+                  promptPayId={garageProfile.promptPayId || '0610692036'}
+                  accountName={garageProfile.bankAccountName}
+                  bankName={garageProfile.bankName}
+                  bankAccountNumber={garageProfile.bankAccountNumber || garageProfile.bankAccount}
+                  amount={selectedInvoice.totalAmount}
+                  shopName={garageProfile.name || garageProfile.garageName}
+                  referenceNo={selectedInvoice.licensePlate}
+                  showActions={true}
+                />
               </div>
 
               {/* Quick Status Toggle */}
               <div className="flex gap-2">
                 <button
-                  onClick={() => updateJobPayment(selectedInvoice.id, 'paid')}
+                  onClick={() => updateJobPayment(selectedInvoice.id, 'paid', 'promptpay')}
                   className={`flex-1 py-2.5 rounded-lg font-bold text-xs transition-colors ${
                     selectedInvoice.paymentStatus === 'paid'
                       ? 'bg-green-500 text-slate-950'
@@ -294,6 +306,17 @@ export const BillingReportView: React.FC<BillingReportViewProps> = ({
         </div>
 
       </div>
+
+      {/* Full PromptPay QR Modal */}
+      {selectedInvoice && (
+        <PromptPayQRModal
+          isOpen={isPromptPayModalOpen}
+          onClose={() => setIsPromptPayModalOpen(false)}
+          initialJobId={selectedInvoice.id}
+          initialAmount={selectedInvoice.totalAmount}
+          initialReference={`ใบสั่งซ่อม #${selectedInvoice.jobNo} (${selectedInvoice.licensePlate})`}
+        />
+      )}
 
     </div>
   );

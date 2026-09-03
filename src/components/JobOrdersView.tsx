@@ -43,6 +43,7 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
+  const [deleteConfirmJob, setDeleteConfirmJob] = useState<{ id: string; jobNo: string } | null>(null);
 
   const filteredJobs = jobOrders.filter((job) => {
     const matchesSearch =
@@ -83,9 +84,7 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
 
   const handleDelete = (e: React.MouseEvent, id: string, jobNo: string) => {
     e.stopPropagation();
-    if (window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบใบสั่งซ่อม ${jobNo}?`)) {
-      deleteJobOrder(id);
-    }
+    setDeleteConfirmJob({ id, jobNo });
   };
 
   const handleExportCsv = () => {
@@ -450,6 +449,44 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {deleteConfirmJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-[#16191D] border border-red-500/30 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">ยืนยันการลบใบสั่งซ่อม</h3>
+                <p className="text-xs text-red-400 font-mono">{deleteConfirmJob.jobNo}</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-300">
+              คุณแน่ใจหรือไม่ว่าต้องการลบใบสั่งซ่อมนี้? ข้อมูลรายการอะไหล่และสถานะช่องซ่อมจะถูกคืนค่า
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#2D3135]">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmJob(null)}
+                className="px-4 py-2 bg-[#252B32] hover:bg-[#2D3135] text-gray-300 rounded-xl text-xs font-semibold transition-all"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteJobOrder(deleteConfirmJob.id);
+                  setDeleteConfirmJob(null);
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-red-900/30"
+              >
+                ยืนยันลบรายการ
+              </button>
+            </div>
           </div>
         </div>
       )}

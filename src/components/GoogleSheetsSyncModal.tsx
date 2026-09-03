@@ -11,7 +11,16 @@ import {
   ShieldCheck,
   Zap,
   ArrowRight,
-  Database
+  Database,
+  Copy,
+  Trash2,
+  Search,
+  Table,
+  HelpCircle,
+  LogIn,
+  Check,
+  Activity,
+  Sparkles,
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import {
@@ -20,8 +29,18 @@ import {
   syncInventoryToGoogleSheet,
   syncCustomersToGoogleSheet,
   getStoredSpreadsheetId,
+  setStoredSpreadsheetId,
+  clearStoredSpreadsheetId,
+  isRealGoogleSpreadsheetId,
+  extractSpreadsheetId,
+  getSpreadsheetUrl,
+  copyDataForGoogleSheets,
   downloadCsvFile,
-  requestGoogleOAuthToken
+  requestGoogleOAuthToken,
+  getStoredGoogleToken,
+  getStoredGoogleEmail,
+  clearStoredGoogleToken,
+  testGoogleSheetsConnection,
 } from '../services/googleSheetsService';
 
 interface GoogleSheetsSyncModalProps {
@@ -41,185 +60,324 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     targetTab === 'customers' ? 'customers' : 'inventory'
   );
 
-  const [inventorySheetId, setInventorySheetId] = useState<string | null>(() =>
-    getStoredSpreadsheetId('inventory')
-  );
-  const [customersSheetId, setCustomersSheetId] = useState<string | null>(() =>
-    getStoredSpreadsheetId('customers')
-  );
+  const [inventorySheetId, setInventorySheetId] = useState<string | null>(null);
+  const [customersSheetId, setCustomersSheetId] = useState<string | null>(null);
 
-  const [isCreating, setIsCreating] = useState(false);
+  const [manualSheetInput, setManualSheetInput] = useState<string>('');
+  const [isEditingLink, setIsEditingLink] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [lastSyncTime, setLastSyncTime] = useState<string | null>(
-    new Date().toLocaleTimeString('th-TH')
-  );
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+  const [isCreatingViaApi, setIsCreatingViaApi] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    connected: boolean;
+    authenticated: boolean;
+    email?: string;
+    spreadsheetTitle?: string;
+    latencyMs: number;
+    message: string;
+  } | null>(null);
 
+  const [googleUserEmail, setGoogleUserEmail] = useState<string | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showDataTable, setShowDataTable] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Synchronize state when opened
   useEffect(() => {
-    setInventorySheetId(getStoredSpreadsheetId('inventory'));
-    setCustomersSheetId(getStoredSpreadsheetId('customers'));
-  }, [isOpen]);
+    if (isOpen) {
+      const invId = getStoredSpreadsheetId('inventory');
+      const custId = getStoredSpreadsheetId('customers');
+      setInventorySheetId(invId);
+      setCustomersSheetId(custId);
+      setManualSheetInput('');
+      setIsEditingLink(false);
+      setErrorMessage(null);
+      setSuccessMessage(null);
+      setTestResult(null);
+
+      const email = getStoredGoogleEmail();
+      setGoogleUserEmail(email);
+
+      // Auto test connection
+      const token = getStoredGoogleToken();
+      if (token) {
+        handleTestConnection(activeSubTab === 'inventory' ? invId : custId);
+      }
+    }
+  }, [isOpen, activeSubTab]);
 
   if (!isOpen) return null;
 
-  // Handle Create Spreadsheet for Inventory
-  const handleCreateInventorySheet = async () => {
-    setIsCreating(true);
+  const currentSheetId = activeSubTab === 'inventory' ? inventorySheetId : customersSheetId;
+  const isSheetValid = isRealGoogleSpreadsheetId(currentSheetId);
+  const currentSheetUrl = isSheetValid && currentSheetId ? getSpreadsheetUrl(currentSheetId) : null;
+  const hasGoogleToken = !!getStoredGoogleToken();
+
+  // Prepare structured headers and rows for inventory
+  const inventoryHeaders = [
+    'รหัสอะไหล่',
+    'ชื่ออะไหล่',
+    'หมวดหมู่',
+    'ยี่ห้อ',
+    'รุ่นรถยนต์',
+    'หน่วย',
+    'จำนวนคงเหลือ',
+    'จุดสั่งซื้อขั้นต่ำ',
+    'ราคาต้นทุน',
+    'ราคาขาย',
+    'ตำแหน่งเก็บ',
+    'ผู้จำหน่าย',
+  ];
+
+  const inventoryRows = spareParts.map((p) => [
+    p.partCode,
+    p.name,
+    p.category,
+    p.brand,
+    p.compatibleModels,
+    p.unit,
+    p.stockQty,
+    p.minStockQty,
+    p.costPrice,
+    p.sellPrice,
+    p.locationRack || '-',
+    p.supplier || '-',
+  ]);
+
+  // Prepare structured headers and rows for customers
+  const customerHeaders = [
+    'รหัสลูกค้า',
+    'ชื่อ-นามสกุล',
+    'เบอร์โทรศัพท์',
+    'LINE ID',
+    'อีเมล',
+    'ที่อยู่',
+    'ทะเบียนรถยนต์',
+    'ยี่ห้อ/รุ่นรถ',
+    'เลขไมล์ล่าสุด',
+    'ยอดใช้จ่ายสะสม',
+    'จำนวนครั้งที่เข้าใช้',
+  ];
+
+  const customerRows: any[][] = [];
+  customers.forEach((c) => {
+    const v = c.vehicles && c.vehicles.length > 0 ? c.vehicles[0] : null;
+    customerRows.push([
+      c.id,
+      c.name,
+      c.phone,
+      c.lineId || '-',
+      c.email || '-',
+      c.address || '-',
+      v ? v.licensePlate : '-',
+      v ? `${v.brand} ${v.model}` : '-',
+      v ? v.lastMileage : 0,
+      c.totalSpent,
+      c.totalVisits,
+    ]);
+  });
+
+  const activeHeaders = activeSubTab === 'inventory' ? inventoryHeaders : customerHeaders;
+  const activeRows = activeSubTab === 'inventory' ? inventoryRows : customerRows;
+
+  // Filter rows for interactive in-app preview table
+  const filteredRows = activeRows.filter((row) =>
+    row.some((cell) => String(cell).toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
+  // 1. Action: Connect Google Account (GSI Token)
+  const handleConnectGoogle = async () => {
+    setIsConnectingGoogle(true);
+    setErrorMessage(null);
     try {
       await requestGoogleOAuthToken();
-      const res = await createInventorySpreadsheet(garageProfile.name, spareParts);
-      setInventorySheetId(res.spreadsheetId);
-      updateGarageProfile({ googleSheetsInventoryId: res.spreadsheetId });
-      setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
-      setSuccessMessage('สร้าง Google Sheet สต็อกอะไหล่สำเร็จเรียบร้อยแล้ว!');
+      const email = getStoredGoogleEmail();
+      setGoogleUserEmail(email);
+      setSuccessMessage('เชื่อมต่อบัญชี Google สำเร็จเรียบร้อยแล้ว!');
       setTimeout(() => setSuccessMessage(null), 4000);
+      handleTestConnection(currentSheetId);
     } catch (err: any) {
-      console.error(err);
-      setSuccessMessage('เกิดข้อผิดพลาดในการเชื่อมต่อ Google Sheets: ' + (err.message || ''));
+      setErrorMessage(`เชื่อมต่อ Google ไม่สำเร็จ: ${err.message || err}`);
     } finally {
-      setIsCreating(false);
+      setIsConnectingGoogle(false);
     }
   };
 
-  // Handle Create Spreadsheet for Customers
-  const handleCreateCustomersSheet = async () => {
-    setIsCreating(true);
+  // 2. Action: Test Connection Ping
+  const handleTestConnection = async (targetId?: string | null) => {
+    setIsTesting(true);
     try {
-      await requestGoogleOAuthToken();
-      const res = await createCustomersSpreadsheet(garageProfile.name, customers);
-      setCustomersSheetId(res.spreadsheetId);
-      updateGarageProfile({ googleSheetsCustomersId: res.spreadsheetId });
-      setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
-      setSuccessMessage('สร้าง Google Sheet ประวัติลูกค้า & รถยนต์สำเร็จเรียบร้อยแล้ว!');
-      setTimeout(() => setSuccessMessage(null), 4000);
+      const res = await testGoogleSheetsConnection(targetId !== undefined ? targetId : currentSheetId);
+      setTestResult(res);
+      if (res.email) {
+        setGoogleUserEmail(res.email);
+      }
     } catch (err: any) {
-      console.error(err);
-      setSuccessMessage('เกิดข้อผิดพลาดในการเชื่อมต่อ Google Sheets: ' + (err.message || ''));
+      setTestResult({
+        connected: false,
+        authenticated: false,
+        latencyMs: 0,
+        message: err?.message || 'การทดสอบขัดข้อง',
+      });
     } finally {
-      setIsCreating(false);
+      setIsTesting(false);
     }
   };
 
-  // Handle Push Sync
+  // 3. Action: Create Spreadsheet automatically via Google API
+  const handleCreateSheetViaApi = async () => {
+    setIsCreatingViaApi(true);
+    setErrorMessage(null);
+    try {
+      let created: { spreadsheetId: string; spreadsheetUrl: string };
+      if (activeSubTab === 'inventory') {
+        created = await createInventorySpreadsheet(garageProfile.name, spareParts);
+        setInventorySheetId(created.spreadsheetId);
+        updateGarageProfile({ googleSheetsInventoryId: created.spreadsheetId });
+      } else {
+        created = await createCustomersSpreadsheet(garageProfile.name, customers);
+        setCustomersSheetId(created.spreadsheetId);
+        updateGarageProfile({ googleSheetsCustomersId: created.spreadsheetId });
+      }
+
+      setSuccessMessage(`สร้างและเชื่อมต่อ Google Sheet สำเร็จเรียบร้อย! (ID: ${created.spreadsheetId})`);
+      setTimeout(() => setSuccessMessage(null), 5000);
+      handleTestConnection(created.spreadsheetId);
+    } catch (err: any) {
+      console.warn('Create via API failed, opening sheets.new fallback:', err);
+      // Fallback: Open sheets.new
+      window.open('https://sheets.new', '_blank', 'noopener,noreferrer');
+      setSuccessMessage(
+        'เปิดหน้าสร้าง Google Sheet (sheets.new) ในแท็บใหม่แล้ว! เมื่อได้หน้าชีต ให้คัดลอกลิงก์มาวางด้านล่าง'
+      );
+      setTimeout(() => setSuccessMessage(null), 8000);
+    } finally {
+      setIsCreatingViaApi(false);
+    }
+  };
+
+  // 4. Action: Save manually pasted Google Sheets URL or ID
+  const handleSaveManualSheet = () => {
+    if (!manualSheetInput.trim()) {
+      setErrorMessage('กรุณาระบุลิงก์หรือ Spreadsheet ID ของ Google Sheets');
+      setTimeout(() => setErrorMessage(null), 4000);
+      return;
+    }
+
+    const cleanId = extractSpreadsheetId(manualSheetInput);
+    if (!isRealGoogleSpreadsheetId(cleanId)) {
+      setErrorMessage('รูปแบบลิงก์หรือ Spreadsheet ID ไม่ถูกต้อง (ต้องเป็น ID จริงจาก Google Sheets)');
+      setTimeout(() => setErrorMessage(null), 5000);
+      return;
+    }
+
+    setStoredSpreadsheetId(activeSubTab, cleanId);
+
+    if (activeSubTab === 'inventory') {
+      setInventorySheetId(cleanId);
+      updateGarageProfile({ googleSheetsInventoryId: cleanId });
+    } else {
+      setCustomersSheetId(cleanId);
+      updateGarageProfile({ googleSheetsCustomersId: cleanId });
+    }
+
+    setManualSheetInput('');
+    setIsEditingLink(false);
+    setErrorMessage(null);
+    setSuccessMessage('เชื่อมโยง Google Sheet สำเร็จเรียบร้อยแล้ว!');
+    setTimeout(() => setSuccessMessage(null), 4000);
+    handleTestConnection(cleanId);
+  };
+
+  // 5. Action: Disconnect / Clear sheet link
+  const handleDisconnectSheet = () => {
+    clearStoredSpreadsheetId(activeSubTab);
+    if (activeSubTab === 'inventory') {
+      setInventorySheetId(null);
+      updateGarageProfile({ googleSheetsInventoryId: '' });
+    } else {
+      setCustomersSheetId(null);
+      updateGarageProfile({ googleSheetsCustomersId: '' });
+    }
+    setTestResult(null);
+    setSuccessMessage('ยกเลิกการเชื่อมโยง Google Sheet เรียบร้อยแล้ว');
+    setTimeout(() => setSuccessMessage(null), 3000);
+  };
+
+  // 6. Action: Copy All Table Data for Direct Paste into Google Sheets (Ctrl+V)
+  const handleCopyForSheets = async () => {
+    const success = await copyDataForGoogleSheets(activeHeaders, activeRows);
+    if (success) {
+      setSuccessMessage(
+        `คัดลอกข้อมูลทั้งหมด (${activeRows.length} แถว) ลงคลิปบอร์ดแล้ว! คุณสามารถเปิด Google Sheets แล้วกดปุ่ม Ctrl+V (วาง) ที่ช่อง A1 ได้ทันที`
+      );
+      setTimeout(() => setSuccessMessage(null), 6000);
+    } else {
+      setErrorMessage('ไม่สามารถคัดลอกลงคลิปบอร์ดได้ กรุณาลองใช้ปุ่มดาวน์โหลด CSV แทน');
+      setTimeout(() => setErrorMessage(null), 4000);
+    }
+  };
+
+  // 7. Action: Download CSV File
+  const handleDownloadCsv = () => {
+    const filename =
+      activeSubTab === 'inventory'
+        ? `[อู่สงกรานต์]-สต็อกอะไหล่-${Date.now()}.csv`
+        : `[อู่สงกรานต์]-ประวัติลูกค้าและรถยนต์-${Date.now()}.csv`;
+    downloadCsvFile(filename, [activeHeaders, ...activeRows]);
+    setSuccessMessage(`ดาวน์โหลดไฟล์ ${filename} เรียบร้อยแล้ว! นำเข้า Google Sheets ได้ที่เมนู: ไฟล์ > นำเข้า`);
+    setTimeout(() => setSuccessMessage(null), 5000);
+  };
+
+  // 8. Action: Push Sync to Live Google Sheets
   const handleSyncNow = async () => {
+    if (!currentSheetId || !isSheetValid) {
+      setErrorMessage('ยังไม่ได้เชื่อมโยง Google Sheets! กรุณาสร้างชีตหรือระบุลิงก์ก่อนซิงค์');
+      setTimeout(() => setErrorMessage(null), 5000);
+      return;
+    }
+
     setIsSyncing(true);
+    setErrorMessage(null);
     try {
       if (activeSubTab === 'inventory') {
-        const id = inventorySheetId || getStoredSpreadsheetId('inventory');
-        if (id) {
-          await syncInventoryToGoogleSheet(id, spareParts);
-        } else {
-          await handleCreateInventorySheet();
-        }
+        await syncInventoryToGoogleSheet(currentSheetId, spareParts);
       } else {
-        const id = customersSheetId || getStoredSpreadsheetId('customers');
-        if (id) {
-          await syncCustomersToGoogleSheet(id, customers);
-        } else {
-          await handleCreateCustomersSheet();
-        }
+        await syncCustomersToGoogleSheet(currentSheetId, customers);
       }
       setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
-      setSuccessMessage('ซิงค์ข้อมูลเรียลไทม์กับ Google Sheets ล่าสุดสำเร็จแล้ว!');
-      setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (e: any) {
-      console.error(e);
+      setSuccessMessage('ซิงค์และบันทึกข้อมูลลงใน Google Sheets สำเร็จเรียบร้อยแล้ว!');
+      setTimeout(() => setSuccessMessage(null), 4000);
+      handleTestConnection(currentSheetId);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMessage(`เกิดข้อผิดพลาดในการซิงค์: ${err.message || 'กรุณาลองใหม่อีกครั้ง'}`);
     } finally {
       setIsSyncing(false);
     }
   };
 
-  // Download CSV
-  const handleDownloadCsv = () => {
-    if (activeSubTab === 'inventory') {
-      const headers = [
-        'รหัสอะไหล่',
-        'ชื่ออะไหล่',
-        'หมวดหมู่',
-        'ยี่ห้อ',
-        'รุ่นรถยนต์',
-        'หน่วย',
-        'จำนวนคงเหลือ',
-        'จุดสั่งซื้อขั้นต่ำ',
-        'ราคาต้นทุน',
-        'ราคาขาย',
-        'ตำแหน่งเก็บ',
-        'ผู้จำหน่าย'
-      ];
-      const rows = spareParts.map((p) => [
-        p.partCode,
-        p.name,
-        p.category,
-        p.brand,
-        p.compatibleModels,
-        p.unit,
-        p.stockQty,
-        p.minStockQty,
-        p.costPrice,
-        p.sellPrice,
-        p.locationRack || '',
-        p.supplier || ''
-      ]);
-      downloadCsvFile(`Songkarn-Auto-Inventory-${Date.now()}.csv`, [headers, ...rows]);
-    } else {
-      const headers = [
-        'รหัสลูกค้า',
-        'ชื่อลูกค้า',
-        'เบอร์โทรศัพท์',
-        'LINE ID',
-        'อีเมล',
-        'ที่อยู่',
-        'ทะเบียนรถ',
-        'ยี่ห้อ/รุ่น',
-        'เลขไมล์ล่าสุด',
-        'ยอดใช้จ่ายรวม (บาท)',
-        'จำนวนครั้งที่เข้าใช้'
-      ];
-      const rows: any[][] = [];
-      customers.forEach((c) => {
-        const v = c.vehicles[0];
-        rows.push([
-          c.id,
-          c.name,
-          c.phone,
-          c.lineId || '',
-          c.email || '',
-          c.address || '',
-          v ? v.licensePlate : '-',
-          v ? `${v.brand} ${v.model}` : '-',
-          v ? v.lastMileage : 0,
-          c.totalSpent,
-          c.totalVisits
-        ]);
-      });
-      downloadCsvFile(`Songkarn-Auto-Customers-${Date.now()}.csv`, [headers, ...rows]);
-    }
-  };
-
-  const currentSheetId = activeSubTab === 'inventory' ? inventorySheetId : customersSheetId;
-  const currentSheetUrl = currentSheetId
-    ? `https://docs.google.com/spreadsheets/d/${currentSheetId}/edit`
-    : null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto animate-in fade-in">
-      <div className="bg-[#16191D] border border-[#2D3135] rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden my-6">
-        
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm overflow-y-auto animate-in fade-in">
+      <div className="bg-[#16191D] border border-[#2D3135] rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden my-4">
         {/* Header */}
-        <div className="flex items-center justify-between p-5 bg-gradient-to-r from-[#1A1D21] to-[#121417] border-b border-[#2D3135]">
+        <div className="flex items-center justify-between p-4 sm:p-5 bg-gradient-to-r from-[#1A1D21] to-[#121417] border-b border-[#2D3135]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#0F9D58] text-white flex items-center justify-center shadow-lg shadow-[#0F9D58]/20">
+            <div className="w-10 h-10 rounded-xl bg-[#0F9D58] text-white flex items-center justify-center shadow-lg shadow-[#0F9D58]/20 shrink-0">
               <FileSpreadsheet className="w-5 h-5 stroke-[2.5]" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <span>เชื่อมต่อและบันทึกข้อมูล Google Sheets</span>
+              <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2 flex-wrap">
+                <span>จัดการและเชื่อมต่อ Google Sheets</span>
                 <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#0F9D58]/20 text-[#0F9D58] border border-[#0F9D58]/30">
                   REAL-TIME SYNC
                 </span>
               </h2>
               <p className="text-xs text-gray-400">
-                ระบบจัดการสต็อกอะไหล่และประวัติลูกค้าอู่สงกรานต์ บันทึกลง Google Sheets แบบเรียลไทม์
+                ระบบจัดการสต็อกอะไหล่และข้อมูลลูกค้า อู่สงกรานต์ (ช่างไมค์ 061-069-2036)
               </p>
             </div>
           </div>
@@ -233,50 +391,151 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex border-b border-[#2D3135] bg-[#121417] px-6 pt-3 gap-2">
+        <div className="flex border-b border-[#2D3135] bg-[#121417] px-4 sm:px-6 pt-3 gap-2 overflow-x-auto">
           <button
-            onClick={() => setActiveSubTab('inventory')}
-            className={`pb-3 px-4 text-xs font-bold transition-all border-b-2 flex items-center gap-2 ${
+            onClick={() => {
+              setActiveSubTab('inventory');
+              setShowDataTable(false);
+            }}
+            className={`pb-3 px-3 sm:px-4 text-xs font-bold transition-all border-b-2 flex items-center gap-2 whitespace-nowrap ${
               activeSubTab === 'inventory'
                 ? 'border-orange-500 text-orange-400'
                 : 'border-transparent text-gray-400 hover:text-gray-200'
             }`}
           >
             <Database className="w-4 h-4" />
-            <span>1. สต็อกอะไหล่ (Inventory Stock) ({spareParts.length} รายการ)</span>
+            <span>1. สต็อกอะไหล่ ({spareParts.length} รายการ)</span>
           </button>
 
           <button
-            onClick={() => setActiveSubTab('customers')}
-            className={`pb-3 px-4 text-xs font-bold transition-all border-b-2 flex items-center gap-2 ${
+            onClick={() => {
+              setActiveSubTab('customers');
+              setShowDataTable(false);
+            }}
+            className={`pb-3 px-3 sm:px-4 text-xs font-bold transition-all border-b-2 flex items-center gap-2 whitespace-nowrap ${
               activeSubTab === 'customers'
                 ? 'border-orange-500 text-orange-400'
                 : 'border-transparent text-gray-400 hover:text-gray-200'
             }`}
           >
             <Zap className="w-4 h-4" />
-            <span>2. ประวัติลูกค้า & ข้อมูลรถยนต์ ({customers.length} ราย)</span>
+            <span>2. ข้อมูลลูกค้า & รถยนต์ ({customers.length} ราย)</span>
           </button>
         </div>
 
-        {/* Body */}
-        <div className="p-6 space-y-6 text-xs">
-          
+        {/* Body Content */}
+        <div className="p-4 sm:p-6 space-y-5 text-xs max-h-[75vh] overflow-y-auto">
+          {/* Notifications */}
           {successMessage && (
-            <div className="p-3.5 bg-green-500/10 border border-green-500/30 rounded-xl text-green-400 flex items-center gap-2 animate-in fade-in">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>{successMessage}</span>
+            <div className="p-3.5 bg-green-500/10 border border-green-500/30 rounded-xl text-green-400 flex items-start gap-2.5 animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="flex-1 leading-relaxed">{successMessage}</div>
             </div>
           )}
 
-          {/* Current Connected Sheet Status Card */}
-          <div className="p-5 rounded-xl bg-[#0F1113] border border-[#2D3135] space-y-4">
+          {errorMessage && (
+            <div className="p-3.5 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 flex items-start gap-2.5 animate-in fade-in">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="flex-1 leading-relaxed">{errorMessage}</div>
+            </div>
+          )}
+
+          {/* Google Account Connection & Diagnostic Status Card */}
+          <div className="p-4 rounded-xl bg-[#0F1113] border border-[#2D3135] space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-[#0F9D58]" />
+                <span className="font-bold text-gray-200">สถานะการเชื่อมต่อบัญชี Google & API</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleTestConnection(currentSheetId)}
+                  disabled={isTesting}
+                  className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-[#16191D] border border-[#2D3135] hover:border-[#0F9D58] text-gray-300 hover:text-white flex items-center gap-1.5 transition-all disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isTesting ? 'animate-spin text-[#0F9D58]' : ''}`} />
+                  <span>{isTesting ? 'กำลังทดสอบ...' : 'ทดสอบสัญญาณ API'}</span>
+                </button>
+
+                {!hasGoogleToken ? (
+                  <button
+                    type="button"
+                    onClick={handleConnectGoogle}
+                    disabled={isConnectingGoogle}
+                    className="px-3 py-1 text-[11px] font-bold rounded-lg bg-white hover:bg-gray-100 text-slate-900 flex items-center gap-1.5 transition-all shadow active:scale-95 disabled:opacity-50"
+                  >
+                    <LogIn className="w-3.5 h-3.5 text-blue-600" />
+                    <span>{isConnectingGoogle ? 'กำลังเปิดหน้าต่าง...' : 'เชื่อมต่อบัญชี Google'}</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearStoredGoogleToken();
+                      setGoogleUserEmail(null);
+                      setTestResult(null);
+                      setSuccessMessage('ออกจากระบบ Google แล้ว');
+                      setTimeout(() => setSuccessMessage(null), 3000);
+                    }}
+                    className="px-2.5 py-1 text-[10px] rounded-lg bg-[#16191D] hover:bg-red-500/10 text-gray-400 hover:text-red-400 border border-[#2D3135] transition-colors"
+                  >
+                    เปลี่ยนบัญชี
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Test result banner */}
+            {testResult && (
+              <div
+                className={`p-3 rounded-lg border text-xs flex items-start gap-2.5 ${
+                  testResult.connected
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                    : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                }`}
+              >
+                {testResult.connected ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                )}
+                <div>
+                  <p className="font-bold">{testResult.message}</p>
+                  {testResult.spreadsheetTitle && (
+                    <p className="text-[11px] opacity-80 mt-0.5">
+                      ชื่อไฟล์สเปรดชีต: &ldquo;{testResult.spreadsheetTitle}&rdquo;
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Current Connected Sheet Card */}
+          <div className="p-4 sm:p-5 rounded-xl bg-[#0F1113] border border-[#2D3135] space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2.5">
-                <span className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span>
+                <span
+                  className={`w-3 h-3 rounded-full ${
+                    isSheetValid ? 'bg-green-500 animate-pulse' : 'bg-amber-500'
+                  }`}
+                ></span>
                 <span className="font-bold text-gray-200 text-sm">
-                  {activeSubTab === 'inventory' ? 'ตารางสต็อกอะไหล่ (Auto Parts Sheet)' : 'ตารางประวัติลูกค้า & ข้อมูลรถยนต์ (CRM Sheet)'}
+                  {activeSubTab === 'inventory'
+                    ? 'ตารางสต็อกอะไหล่ (Inventory Sheet)'
+                    : 'ตารางข้อมูลลูกค้า & รถยนต์ (CRM Sheet)'}
                 </span>
+                {isSheetValid ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 border border-green-500/30 font-bold">
+                    เชื่อมต่ออยู่
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 font-bold">
+                    ยังไม่เชื่อมต่อชีต
+                  </span>
+                )}
               </div>
 
               {lastSyncTime && (
@@ -286,122 +545,305 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
               )}
             </div>
 
-            {currentSheetId ? (
-              <div className="p-3.5 rounded-lg bg-[#16191D] border border-[#2D3135] flex items-center justify-between flex-wrap gap-3">
-                <div>
-                  <p className="text-[11px] text-gray-400">Spreadsheet ID ที่เชื่อมต่อ:</p>
-                  <p className="text-xs font-mono font-bold text-orange-400 mt-0.5">{currentSheetId}</p>
+            {/* Condition: Sheet is connected and valid */}
+            {isSheetValid && currentSheetUrl ? (
+              <div className="p-4 rounded-xl bg-[#16191D] border border-[#2D3135] space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] text-gray-400">Google Spreadsheet ID ที่เชื่อมโยง:</p>
+                    <p className="text-xs font-mono font-bold text-orange-400 truncate mt-0.5 select-all">
+                      {currentSheetId}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <a
+                      href={currentSheetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 rounded-lg bg-[#0F9D58] hover:bg-[#0c8047] text-white font-bold flex items-center gap-1.5 shadow-md shadow-[#0F9D58]/20 transition-all active:scale-95"
+                    >
+                      <FileSpreadsheet className="w-4 h-4" />
+                      <span>เปิด Google Sheets บน Drive</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingLink(!isEditingLink)}
+                      className="px-3 py-2 rounded-lg bg-[#1C2025] hover:bg-[#282E35] border border-[#2D3135] text-gray-300 transition-colors"
+                    >
+                      แก้ไขลิงก์
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleDisconnectSheet}
+                      title="ยกเลิกการเชื่อมต่อชีตนี้"
+                      className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
-                <a
-                  href={currentSheetUrl || '#'}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-4 py-2 rounded-lg bg-[#0F9D58] hover:bg-[#0c8047] text-white font-bold flex items-center gap-1.5 shadow-md shadow-[#0F9D58]/20 transition-all active:scale-95"
-                >
-                  <FileSpreadsheet className="w-4 h-4" />
-                  <span>เปิด Google Sheets บน Drive</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                {isEditingLink && (
+                  <div className="pt-3 border-t border-[#2D3135] flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={manualSheetInput}
+                      onChange={(e) => setManualSheetInput(e.target.value)}
+                      placeholder="วาง URL หรือ Spreadsheet ID ใหม่ที่ต้องการเปลี่ยน..."
+                      className="flex-1 px-3 py-2 rounded-lg bg-[#0F1113] border border-[#2D3135] text-white text-xs placeholder:text-gray-500 focus:outline-none focus:border-orange-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveManualSheet}
+                      className="px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-bold whitespace-nowrap"
+                    >
+                      บันทึก
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingLink(false)}
+                      className="px-3 py-2 rounded-lg bg-[#1C2025] text-gray-400"
+                    >
+                      ยกเลิก
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
-              <div className="p-4 rounded-lg bg-[#16191D] border border-dashed border-[#2D3135] text-center space-y-3">
-                <p className="text-gray-400">
-                  ยังไม่ได้สร้างสเปรดชีตบน Google Sheets สำหรับส่วนนี้ คุณสามารถคลิกปุ่มด้านล่างเพื่อสร้างไฟล์ Google Sheet ใหม่และซิงค์ข้อมูลได้ทันที
-                </p>
+              /* Condition: No sheet connected yet */
+              <div className="p-4 sm:p-5 rounded-xl bg-[#16191D] border border-dashed border-[#2D3135] space-y-4">
+                <div className="text-center space-y-1.5">
+                  <p className="text-gray-200 font-bold text-sm">
+                    เริ่มต้นใช้งาน Google Sheets สำหรับ
+                    {activeSubTab === 'inventory' ? 'สต็อกอะไหล่' : 'ข้อมูลลูกค้า'}
+                  </p>
+                  <p className="text-gray-400 text-xs max-w-xl mx-auto">
+                    คลิกปุ่มด้านล่างเพื่อสร้าง Google Sheet อัตโนมัติลงในบัญชี Google Drive ของคุณ
+                    หรือวางลิงก์ของไฟล์สเปรดชีตที่คุณสร้างไว้แล้ว
+                  </p>
+                </div>
 
-                <button
-                  type="button"
-                  disabled={isCreating}
-                  onClick={activeSubTab === 'inventory' ? handleCreateInventorySheet : handleCreateCustomersSheet}
-                  className="px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold flex items-center gap-2 mx-auto shadow-lg shadow-orange-500/25 active:scale-95 transition-all"
-                >
-                  {isCreating ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <PlusCircle className="w-4 h-4 stroke-[2.5]" />
-                  )}
-                  <span>
-                    {activeSubTab === 'inventory'
-                      ? 'สร้าง Google Sheet สต็อกอะไหล่ทันที'
-                      : 'สร้าง Google Sheet ประวัติลูกค้าทันที'}
-                  </span>
-                </button>
+                {/* Primary Action: Auto create spreadsheet via API */}
+                <div className="flex justify-center flex-wrap gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleCreateSheetViaApi}
+                    disabled={isCreatingViaApi}
+                    className="px-5 py-2.5 rounded-xl bg-[#0F9D58] hover:bg-[#0c8047] text-white font-bold flex items-center gap-2 shadow-lg shadow-[#0F9D58]/20 transition-all active:scale-95 text-xs sm:text-sm disabled:opacity-50"
+                  >
+                    <Sparkles className="w-4 h-4 stroke-[2.5]" />
+                    <span>
+                      {isCreatingViaApi
+                        ? 'กำลังสร้างและเขียนตารางลง Google Drive...'
+                        : 'สร้าง Google Sheet ใหม่อัตโนมัติ'}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Paste Link Form */}
+                <div className="pt-3 border-t border-[#2D3135]/80 space-y-2">
+                  <label className="text-[11px] text-gray-300 font-medium flex items-center gap-1.5">
+                    <span>หรือ วางลิงก์ Google Sheets (หรือระบุ Spreadsheet ID) ที่คุณมีอยู่แล้ว:</span>
+                  </label>
+
+                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                    <input
+                      type="text"
+                      value={manualSheetInput}
+                      onChange={(e) => setManualSheetInput(e.target.value)}
+                      placeholder="เช่น https://docs.google.com/spreadsheets/d/1w3q9z.../edit"
+                      className="flex-1 min-w-[240px] px-3.5 py-2.5 rounded-lg bg-[#0F1113] border border-[#2D3135] text-white text-xs placeholder:text-gray-500 focus:outline-none focus:border-[#0F9D58]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveManualSheet}
+                      className="px-5 py-2.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-bold whitespace-nowrap active:scale-95 transition-all shadow-md shadow-orange-500/20"
+                    >
+                      บันทึกและเชื่อมต่อ
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-500">
+                    💡 เคล็ดลับ: สามารถวางลิงก์ทั้ง URL จากเบราว์เซอร์ได้เลย ระบบจะแยก Spreadsheet ID
+                    ให้อัตโนมัติ
+                  </p>
+                </div>
               </div>
             )}
           </div>
 
-          {/* Sync Controls & Options */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            
-            {/* Action 1: Real-time Synchronize */}
-            <div className="p-4 rounded-xl bg-[#0F1113] border border-[#2D3135] space-y-3">
-              <div className="flex items-center gap-2 text-white font-bold">
-                <RefreshCw className="w-4 h-4 text-orange-500" />
-                <span>ซิงค์ข้อมูลล่าสุด (Push & Update)</span>
+          {/* Quick Data Operations: Copy, Download, Sync */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Tool 1: Copy All Data to Clipboard */}
+            <div className="p-3.5 rounded-xl bg-[#0F1113] border border-[#2D3135] flex flex-col justify-between space-y-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-white font-bold">
+                  <Copy className="w-4 h-4 text-emerald-400" />
+                  <span>คัดลอกข้อมูลทั้งหมด</span>
+                </div>
+                <p className="text-[11px] text-gray-400">
+                  คัดลอกตาราง ({activeRows.length} แถว) เพื่อนำไปกด Ctrl+V วางลงใน Google Sheets ได้ทันที
+                </p>
               </div>
-              <p className="text-[11px] text-gray-400">
-                ส่งข้อมูลอะไหล่/ลูกค้าในระบบปัจจุบัน ไปบันทึกลงใน Google Sheets แถวตารางทันที
-              </p>
+
+              <button
+                type="button"
+                onClick={handleCopyForSheets}
+                className="w-full py-2 px-3 rounded-lg bg-[#1C2025] hover:bg-[#282E35] border border-emerald-500/30 text-emerald-400 font-bold flex items-center justify-center gap-2 transition-all active:scale-95"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>คัดลอกตารางข้อมูล</span>
+              </button>
+            </div>
+
+            {/* Tool 2: Download CSV */}
+            <div className="p-3.5 rounded-xl bg-[#0F1113] border border-[#2D3135] flex flex-col justify-between space-y-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-white font-bold">
+                  <Download className="w-4 h-4 text-sky-400" />
+                  <span>ดาวน์โหลด CSV</span>
+                </div>
+                <p className="text-[11px] text-gray-400">
+                  ส่งออกไฟล์ .CSV รองรับภาษาไทยสมบูรณ์ เปิดใน Excel หรือนำเข้า Google Sheets
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleDownloadCsv}
+                className="w-full py-2 px-3 rounded-lg bg-[#1C2025] hover:bg-[#282E35] border border-sky-500/30 text-sky-400 font-bold flex items-center justify-center gap-2 transition-all active:scale-95"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>ดาวน์โหลดไฟล์ .CSV</span>
+              </button>
+            </div>
+
+            {/* Tool 3: Synchronize Live */}
+            <div className="p-3.5 rounded-xl bg-[#0F1113] border border-[#2D3135] flex flex-col justify-between space-y-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-white font-bold">
+                  <RefreshCw className="w-4 h-4 text-orange-400" />
+                  <span>ซิงค์ข้อมูล (Push Sync)</span>
+                </div>
+                <p className="text-[11px] text-gray-400">
+                  ส่งข้อมูลล่าสุดในอู่ไปยัง Google Sheets ที่เชื่อมโยงไว้ในทันที
+                </p>
+              </div>
+
               <button
                 type="button"
                 disabled={isSyncing}
                 onClick={handleSyncNow}
-                className="w-full py-2 px-3 rounded-lg bg-[#1C2025] hover:bg-[#282E35] border border-[#2D3135] text-gray-200 font-bold flex items-center justify-center gap-2 transition-all active:scale-95"
+                className="w-full py-2 px-3 rounded-lg bg-[#1C2025] hover:bg-[#282E35] border border-orange-500/30 text-orange-400 font-bold flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-orange-400' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
                 <span>{isSyncing ? 'กำลังซิงค์ข้อมูล...' : 'ซิงค์ข้อมูลเดี๋ยวนี้'}</span>
               </button>
             </div>
+          </div>
 
-            {/* Action 2: Export CSV */}
-            <div className="p-4 rounded-xl bg-[#0F1113] border border-[#2D3135] space-y-3">
-              <div className="flex items-center gap-2 text-white font-bold">
-                <Download className="w-4 h-4 text-sky-400" />
-                <span>ดาวน์โหลดไฟล์ CSV (Excel / Sheet)</span>
-              </div>
-              <p className="text-[11px] text-gray-400">
-                ส่งออกข้อมูลเป็นไฟล์ .CSV สำหรับเปิดใน Microsoft Excel หรือนำไปประมวลผลต่อ
-              </p>
+          {/* Interactive In-App Data Table Toggle */}
+          <div className="border border-[#2D3135] rounded-xl overflow-hidden bg-[#0F1113]">
+            <div className="p-3.5 bg-[#16191D] border-b border-[#2D3135] flex items-center justify-between flex-wrap gap-2">
               <button
                 type="button"
-                onClick={handleDownloadCsv}
-                className="w-full py-2 px-3 rounded-lg bg-[#1C2025] hover:bg-[#282E35] border border-[#2D3135] text-sky-400 font-bold flex items-center justify-center gap-2 transition-all active:scale-95"
+                onClick={() => setShowDataTable(!showDataTable)}
+                className="flex items-center gap-2 text-white font-bold hover:text-orange-400 transition-colors"
               >
-                <Download className="w-3.5 h-3.5" />
-                <span>ดาวน์โหลด CSV ทันที</span>
+                <Table className="w-4 h-4 text-orange-400" />
+                <span>
+                  {showDataTable ? 'ซ่อนตารางข้อมูลในระบบ' : 'ดูตัวอย่างตารางข้อมูลในระบบ (In-App Table)'}
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-[#2D3135] text-gray-300">
+                  {activeRows.length} รายการ
+                </span>
               </button>
+
+              {showDataTable && (
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="ค้นหาข้อมูลในตาราง..."
+                    className="pl-8 pr-3 py-1 rounded-lg bg-[#0F1113] border border-[#2D3135] text-white text-xs placeholder:text-gray-500 focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+              )}
             </div>
 
+            {showDataTable && (
+              <div className="overflow-x-auto max-h-60 p-2">
+                <table className="w-full text-left border-collapse text-[11px]">
+                  <thead>
+                    <tr className="border-b border-[#2D3135] bg-[#121417]">
+                      {activeHeaders.map((head, idx) => (
+                        <th key={idx} className="p-2 text-gray-400 font-bold whitespace-nowrap">
+                          {head}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#1F2327]">
+                    {filteredRows.length > 0 ? (
+                      filteredRows.map((row, rIdx) => (
+                        <tr key={rIdx} className="hover:bg-[#16191D]/80">
+                          {row.map((cell, cIdx) => (
+                            <td key={cIdx} className="p-2 text-gray-300 whitespace-nowrap">
+                              {String(cell)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={activeHeaders.length} className="p-4 text-center text-gray-500">
+                          ไม่พบข้อมูลที่ตรงกับคำค้นหา
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
-          {/* Real-time Feature Guarantee */}
-          <div className="p-3.5 rounded-xl bg-[#0F9D58]/10 border border-[#0F9D58]/25 text-[11px] text-[#0F9D58] flex items-center gap-3">
-            <ShieldCheck className="w-5 h-5 shrink-0 text-[#0F9D58]" />
-            <div>
-              <p className="font-bold">ระบบบันทึกคลังสองทางแบบเรียลไทม์ (Auto Real-time Sync Active)</p>
-              <p className="text-gray-300 mt-0.5">
-                เมื่อมีการเพิ่มอะไหล่ใหม่, ตัดสต็อกจากการซ่อม, เติมสต็อก หรือเพิ่มประวัติลูกค้า ระบบจะบันทึกข้อมูลเข้า Google Sheets และระบบคลังอัตโนมัติ
-              </p>
+          {/* Quick Guide */}
+          <div className="p-3.5 rounded-xl bg-[#0F9D58]/10 border border-[#0F9D58]/25 text-[11px] text-gray-300 space-y-1">
+            <div className="flex items-center gap-2 font-bold text-[#0F9D58]">
+              <ShieldCheck className="w-4 h-4" />
+              <span>คำแนะนำการใช้งาน Google Sheets:</span>
             </div>
+            <p>
+              1. คลิกปุ่ม <strong>&ldquo;สร้าง Google Sheet ใหม่อัตโนมัติ&rdquo;</strong>{' '}
+              ระบบจะสร้างไฟล์และนำเข้าข้อมูลพร้อมจัดคอลัมน์ภาษาไทยให้เสร็จสรรพ
+            </p>
+            <p>
+              2. หากต้องการนำเข้าด้วยตนเอง สามารถกด <strong>&ldquo;คัดลอกตารางข้อมูล&rdquo;</strong> แล้วสลับไปที่ Google Sheets และกด <code>Ctrl + V</code> ที่ช่อง <code>A1</code>
+            </p>
+            <p>
+              3. กด <strong>&ldquo;ซิงค์ข้อมูลเดี๋ยวนี้&rdquo;</strong> เมื่อใดก็ได้ที่ต้องการอัปเดตสต็อกหรือลูกค้าล่าสุดขึ้นไปยังสเปรดชีต
+            </p>
           </div>
-
         </div>
 
         {/* Footer */}
         <div className="p-4 bg-[#121417] border-t border-[#2D3135] flex items-center justify-between">
           <span className="text-[11px] text-gray-400">
-            อู่สงกรานต์ (ช่างไมค์ 061-069-2036) • Google Sheets & Drive API v4
+            อู่สงกรานต์ (ช่างไมค์ 061-069-2036) • Google Sheets Online Integration
           </span>
 
           <button
             onClick={onClose}
             className="px-5 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-all active:scale-95 shadow-md shadow-orange-500/20"
           >
-            เสร็จสิ้น (Done)
+            ปิดหน้าต่าง (Close)
           </button>
         </div>
-
       </div>
     </div>
   );

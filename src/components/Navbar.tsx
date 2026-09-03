@@ -15,13 +15,16 @@ import {
   Send,
   MessageSquare,
   ExternalLink,
-  Menu
+  Menu,
+  QrCode
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types';
 import { GarageLogo } from './GarageLogo';
 import { GoogleSheetsSyncModal } from './GoogleSheetsSyncModal';
+import { FirebaseSyncModal } from './FirebaseSyncModal';
+import { PromptPayQRModal } from './PromptPayQRModal';
 import { DEFAULT_LINE_ID, DEFAULT_LINE_URL, DEFAULT_MECHANIC_PHONE } from '../services/lineService';
 
 interface NavbarProps {
@@ -29,6 +32,7 @@ interface NavbarProps {
   onOpenNewJobModal: () => void;
   onOpenFirebaseModal?: () => void;
   onOpenAuthModal?: () => void;
+  onOpenPromptPayModal?: () => void;
   onSelectJob: (jobId: string) => void;
   activeTab?: string;
   setActiveTab?: (tab: string) => void;
@@ -39,6 +43,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenNewJobModal,
   onOpenFirebaseModal,
   onOpenAuthModal,
+  onOpenPromptPayModal,
   onSelectJob,
   activeTab,
   setActiveTab,
@@ -51,6 +56,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
+  const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
+  const [isPromptPayModalOpen, setIsPromptPayModalOpen] = useState(false);
 
   const phone = garageProfile.mechanicPhone || garageProfile.phone || DEFAULT_MECHANIC_PHONE;
   const lineId = garageProfile.lineId || DEFAULT_LINE_ID;
@@ -209,6 +216,23 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <ExternalLink className="w-3 h-3 opacity-70" />
               </a>
 
+              {/* PromptPay Quick QR Payment Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenPromptPayModal) {
+                    onOpenPromptPayModal();
+                  } else {
+                    setIsPromptPayModalOpen(true);
+                  }
+                }}
+                title="สร้าง QR Code รับชำระเงิน พร้อมเพย์ (PromptPay)"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-600/15 border border-blue-500/30 hover:bg-blue-600/25 text-blue-400 hover:text-blue-300 transition-all text-xs font-bold active:scale-95 shadow-sm"
+              >
+                <QrCode className="w-3.5 h-3.5 text-blue-400" />
+                <span className="hidden md:inline">QR พร้อมเพย์</span>
+              </button>
+
               {/* Google Sheets Sync Action Button */}
               <button
                 type="button"
@@ -222,8 +246,14 @@ export const Navbar: React.FC<NavbarProps> = ({
 
               {/* Real-time Firebase Sync Status Badge */}
               <div
-                onClick={onOpenFirebaseModal}
-                title="คลิกเพื่อดูการตั้งค่า Firebase & Firestore (Songkarn-v1)"
+                onClick={() => {
+                  if (onOpenFirebaseModal) {
+                    onOpenFirebaseModal();
+                  } else {
+                    setIsFirebaseModalOpen(true);
+                  }
+                }}
+                title="คลิกเพื่อดูการตั้งค่าและการเชื่อมต่อ Firebase & Firestore"
                 className="cursor-pointer hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/20 hover:border-green-500/40 transition-all text-xs"
               >
                 <div className="relative flex h-2 w-2">
@@ -356,6 +386,18 @@ export const Navbar: React.FC<NavbarProps> = ({
       <GoogleSheetsSyncModal
         isOpen={isSheetsModalOpen}
         onClose={() => setIsSheetsModalOpen(false)}
+      />
+
+      {/* Firebase Diagnostics & Sync Modal */}
+      <FirebaseSyncModal
+        isOpen={isFirebaseModalOpen}
+        onClose={() => setIsFirebaseModalOpen(false)}
+      />
+
+      {/* PromptPay QR Code Modal */}
+      <PromptPayQRModal
+        isOpen={isPromptPayModalOpen}
+        onClose={() => setIsPromptPayModalOpen(false)}
       />
     </>
   );

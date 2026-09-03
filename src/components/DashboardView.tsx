@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Car,
   Clock,
@@ -14,11 +14,13 @@ import {
   ShieldAlert,
   Calendar,
   Sparkles,
-  DollarSign
+  DollarSign,
+  QrCode
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { JobOrder, JobStatus } from '../types';
 import { GarageLogo } from './GarageLogo';
+import { PromptPayQRModal } from './PromptPayQRModal';
 
 interface DashboardViewProps {
   onSelectJob: (jobId: string) => void;
@@ -33,6 +35,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   setActiveTab,
   onNavigateTab,
 }) => {
+  const [isPromptPayModalOpen, setIsPromptPayModalOpen] = useState<boolean>(false);
   const navigateTo = (tab: string) => {
     if (setActiveTab) setActiveTab(tab);
     if (onNavigateTab) onNavigateTab(tab);
@@ -94,6 +97,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         <div className="flex flex-wrap items-center gap-3">
           <button
+            type="button"
+            onClick={() => setIsPromptPayModalOpen(true)}
+            className="px-4 py-2.5 rounded-lg bg-blue-950/40 hover:bg-blue-900/60 border border-blue-600/40 text-blue-300 font-bold text-sm transition-all flex items-center gap-2 active:scale-95 shadow-sm"
+          >
+            <QrCode className="w-4 h-4 text-blue-400" />
+            <span>QR รับชำระเงิน</span>
+          </button>
+          <button
             onClick={() => setActiveTab('inventory')}
             className="px-4 py-2.5 rounded-lg bg-[#0F1113] hover:bg-[#1C2025] border border-[#2D3135] text-gray-200 font-medium text-sm transition-all flex items-center gap-2"
           >
@@ -130,7 +141,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <div className="mt-3 pt-3 border-t border-[#2D3135] flex items-center justify-between text-xs text-gray-400">
             <span>ช่องซ่อมที่ใช้งาน</span>
-            <span className="text-orange-400 font-mono font-bold">{serviceBays.filter(b => b.status === 'occupied').length} / 6 ลิฟต์</span>
+            <span className="text-orange-400 font-mono font-bold">{serviceBays.filter(b => b.status === 'occupied').length} / {serviceBays.length} ลิฟต์</span>
           </div>
         </div>
 
@@ -204,7 +215,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       </div>
 
-      {/* Interactive Service Bays / Hoists Floor Map (ช่องซ่อม 1 - 6) */}
+      {/* Interactive Service Bays / Hoists Floor Map (ช่องซ่อม 1 - 3) */}
       <div className="bg-[#16191D] border border-[#2D3135] rounded-xl p-6 shadow-md">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
           <div>
@@ -219,7 +230,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </span>
             </div>
             <p className="text-xs text-gray-400 mt-0.5">
-              แสดงรถที่กำลังประจำการในแต่ละช่องซ่อม ช่างผู้รับผิดชอบ และความคืบหน้า
+              แสดงรถที่กำลังประจำการในแต่ละช่องซ่อม ช่างผู้รับผิดชอบ และความคืบหน้า (3 ช่องซ่อม)
             </p>
           </div>
 
@@ -236,8 +247,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* 6 Bays Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* 3 Bays Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {serviceBays.map((bay) => {
             const currentJob = jobOrders.find((j) => j.id === bay.currentJobId);
             const isOccupied = bay.status === 'occupied' && currentJob;
@@ -502,6 +513,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
       </div>
+
+      {/* Quick PromptPay QR Modal */}
+      <PromptPayQRModal
+        isOpen={isPromptPayModalOpen}
+        onClose={() => setIsPromptPayModalOpen(false)}
+      />
 
     </div>
   );

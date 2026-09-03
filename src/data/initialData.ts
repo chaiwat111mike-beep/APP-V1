@@ -29,10 +29,7 @@ export const initialGarageProfile: GarageProfile = {
 export const initialServiceBays: ServiceBay[] = [
   { id: 'bay-1', bayNumber: 1, name: 'ลิฟต์ยกรถ 1 (งานเช็คระยะด่วน)', type: 'quick_service', status: 'occupied', currentJobId: 'job-101' },
   { id: 'bay-2', bayNumber: 2, name: 'ลิฟต์ยกรถ 2 (ช่วงล่าง & เบรก)', type: 'suspension', status: 'occupied', currentJobId: 'job-102' },
-  { id: 'bay-3', bayNumber: 3, name: 'ลิฟต์ยกรถ 3 (เครื่องยนต์ & เกียร์)', type: 'engine', status: 'occupied', currentJobId: 'job-103' },
-  { id: 'bay-4', bayNumber: 4, name: 'ลิฟต์ยกรถ 4 (งานซ่อมทั่วไป)', type: 'general', status: 'available' },
-  { id: 'bay-5', bayNumber: 5, name: 'ช่องซ่อม 5 (ระบบไฟ & แอร์)', type: 'general', status: 'occupied', currentJobId: 'job-104' },
-  { id: 'bay-6', bayNumber: 6, name: 'ช่องซ่อม 6 (ตั้งศูนย์ถ่วงล้อ)', type: 'alignment', status: 'available' },
+  { id: 'bay-3', bayNumber: 3, name: 'ลิฟต์ยกรถ 3 (เครื่องยนต์ & ระบบไฟ)', type: 'engine', status: 'occupied', currentJobId: 'job-103' },
 ];
 
 export const initialMechanics: MechanicStaff[] = [
@@ -519,7 +516,7 @@ export const initialJobOrders: JobOrder[] = [
     technicianNotes: 'ทดสอบแบตเตอรี่ด้วยเครื่องวัด CCA พบว่าค่าเสื่อมสภาพ (SoH 28%) ไดชาร์จและไดสตาร์ททำงานปกติ แนะนำเปลี่ยนแบตเตอรี่ใหม่',
     mechanicId: 'mech-1',
     mechanicName: 'ช่างสงกรานต์ สมบูรณ์ (ช่างใหญ่)',
-    bayNumber: 5,
+    bayNumber: 1,
     status: 'completed',
     priority: 'normal',
     partsUsed: [

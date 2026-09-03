@@ -65,7 +65,7 @@ export interface JobOrder {
   
   mechanicId?: string;
   mechanicName?: string;
-  bayNumber?: number; // ช่องซ่อม 1-6
+  bayNumber?: number; // ช่องซ่อม 1-3
   
   status: JobStatus;
   priority: JobPriority;

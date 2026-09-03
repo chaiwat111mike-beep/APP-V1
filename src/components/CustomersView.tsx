@@ -24,7 +24,7 @@ import {
 import { useGarage } from '../context/GarageContext';
 import { Customer, CustomerVehicle } from '../types';
 import { GoogleSheetsSyncModal } from './GoogleSheetsSyncModal';
-import { downloadCsvFile, getStoredSpreadsheetId } from '../services/googleSheetsService';
+import { downloadCsvFile, getStoredSpreadsheetId, isRealGoogleSpreadsheetId } from '../services/googleSheetsService';
 import { getDirectLineUrl, DEFAULT_LINE_ID } from '../services/lineService';
 
 interface CustomersViewProps {
@@ -56,7 +56,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
   const [vYear, setVYear] = useState('2022');
   const [vMileage, setVMileage] = useState<number>(30000);
 
-  const customersSheetId = getStoredSpreadsheetId('customers') || garageProfile.googleSheetsCustomersId;
+  const customersSheetId = getStoredSpreadsheetId('customers') || (isRealGoogleSpreadsheetId(garageProfile.googleSheetsCustomersId) ? garageProfile.googleSheetsCustomersId : null);
 
   const filteredCustomers = customers.filter((c) => {
     const q = searchQuery.toLowerCase();
@@ -392,11 +392,11 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
             <form onSubmit={handleAddSubmit} className="space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-gray-300 font-semibold mb-1">ชื่อ-นามสกุลลูกค้า *</label>
+                  <label className="block text-gray-300 font-semibold mb-1">ชื่อ-นามสกุล ลูกค้า *</label>
                   <input
                     type="text"
                     required
-                    value={custName}
+                    value={custName || ''}
                     onChange={(e) => setCustName(e.target.value)}
                     placeholder="เช่น คุณสมศักดิ์ มั่นคง"
                     className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white focus:border-orange-500 focus:outline-none"
@@ -407,7 +407,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                   <input
                     type="tel"
                     required
-                    value={custPhone}
+                    value={custPhone || ''}
                     onChange={(e) => setCustPhone(e.target.value)}
                     placeholder="081-234-5678"
                     className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white font-mono focus:border-orange-500 focus:outline-none"
@@ -420,7 +420,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                   <label className="block text-gray-300 font-semibold mb-1">LINE ID</label>
                   <input
                     type="text"
-                    value={custLine}
+                    value={custLine || ''}
                     onChange={(e) => setCustLine(e.target.value)}
                     placeholder="เช่น somsak_car"
                     className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white font-mono focus:border-orange-500 focus:outline-none"
@@ -430,7 +430,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                   <label className="block text-gray-300 font-semibold mb-1">อีเมล (ถ้ามี)</label>
                   <input
                     type="email"
-                    value={custEmail}
+                    value={custEmail || ''}
                     onChange={(e) => setCustEmail(e.target.value)}
                     placeholder="somsak@example.com"
                     className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white focus:border-orange-500 focus:outline-none"
@@ -442,7 +442,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                 <label className="block text-gray-300 font-semibold mb-1">ที่อยู่ลูกค้า</label>
                 <input
                   type="text"
-                  value={custAddress}
+                  value={custAddress || ''}
                   onChange={(e) => setCustAddress(e.target.value)}
                   placeholder="เช่น 123/45 แขวงบางแค กรุงเทพฯ"
                   className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white focus:border-orange-500 focus:outline-none"
@@ -461,7 +461,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                     <input
                       type="text"
                       required
-                      value={vPlate}
+                      value={vPlate || ''}
                       onChange={(e) => setVPlate(e.target.value.toUpperCase())}
                       placeholder="เช่น 1กข-9999 กทม."
                       className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white font-mono font-bold focus:border-orange-500 focus:outline-none"
@@ -471,7 +471,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                     <label className="block text-gray-300 font-semibold mb-1">ยี่ห้อรถยนต์</label>
                     <input
                       type="text"
-                      value={vBrand}
+                      value={vBrand || ''}
                       onChange={(e) => setVBrand(e.target.value)}
                       placeholder="Toyota / Honda / Isuzu"
                       className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white focus:border-orange-500 focus:outline-none"
@@ -484,7 +484,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                     <label className="block text-gray-300 font-semibold mb-1">รุ่นรถยนต์</label>
                     <input
                       type="text"
-                      value={vModel}
+                      value={vModel || ''}
                       onChange={(e) => setVModel(e.target.value)}
                       placeholder="Vios / D-Max / Civic"
                       className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white focus:border-orange-500 focus:outline-none"
@@ -494,7 +494,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                     <label className="block text-gray-300 font-semibold mb-1">ปีผลิต</label>
                     <input
                       type="text"
-                      value={vYear}
+                      value={vYear || ''}
                       onChange={(e) => setVYear(e.target.value)}
                       placeholder="2022"
                       className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white font-mono focus:border-orange-500 focus:outline-none"
@@ -504,7 +504,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                     <label className="block text-gray-300 font-semibold mb-1">เลขไมล์ปัจจุบัน (กม.)</label>
                     <input
                       type="number"
-                      value={vMileage}
+                      value={vMileage ?? 0}
                       onChange={(e) => setVMileage(Number(e.target.value))}
                       className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl text-white font-mono focus:border-orange-500 focus:outline-none"
                     />

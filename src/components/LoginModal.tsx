@@ -9,7 +9,17 @@ interface LoginModalProps {
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
-  const { user, loginWithGoogle, switchRole, logout } = useAuth();
+  const { currentUser, loginWithGoogle, quickLoginAsRole, logout } = useAuth();
+
+  const user = currentUser
+    ? {
+        name: currentUser.displayName,
+        email: currentUser.email,
+        avatar: currentUser.photoURL,
+        role: currentUser.role,
+      }
+    : null;
+  const switchRole = quickLoginAsRole;
 
   if (!isOpen) return null;
 

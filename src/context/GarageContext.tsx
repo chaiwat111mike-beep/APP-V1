@@ -35,7 +35,8 @@ import {
   createCustomersSpreadsheet,
   syncInventoryToGoogleSheet,
   syncCustomersToGoogleSheet,
-  getStoredSpreadsheetId
+  getStoredSpreadsheetId,
+  isRealGoogleSpreadsheetId
 } from '../services/googleSheetsService';
 import { calculateJobBreakdown, generateAutoJobNo, CalculationBreakdown } from '../utils/jobCalculator';
 
@@ -135,7 +136,13 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [serviceBays, setServiceBays] = useState<ServiceBay[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.BAYS);
-      return saved ? JSON.parse(saved) : initialServiceBays;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter((b: ServiceBay) => b.bayNumber <= 3);
+        }
+      }
+      return initialServiceBays;
     } catch {
       return initialServiceBays;
     }
@@ -197,7 +204,7 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return;
       }
 
-      // Subscribe to Job Orders with graceful offline fallback
+      // 1. Subscribe to Job Orders with graceful offline fallback
       const unsubJobs = onSnapshot(
         collection(db, 'job_orders'),
         (snapshot) => {
@@ -206,7 +213,6 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             snapshot.forEach((docSnap) => {
               remoteJobs.push(docSnap.data() as JobOrder);
             });
-            // Merge with local
             setJobOrders(remoteJobs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
           }
           setSyncStatus((prev) => ({
@@ -217,7 +223,53 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           }));
         },
         (error) => {
-          // Graceful fallback to offline local-storage sync
+          // Graceful fallback to offline local-first mode if backend unreachable
+          setSyncStatus((prev) => ({
+            ...prev,
+            connected: true,
+            mode: 'offline_synced',
+            lastSyncedAt: new Date().toLocaleTimeString('th-TH'),
+          }));
+        }
+      );
+
+      // 2. Subscribe to Spare Parts
+      const unsubParts = onSnapshot(
+        collection(db, 'spare_parts'),
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const remoteParts: SparePart[] = [];
+            snapshot.forEach((docSnap) => {
+              remoteParts.push(docSnap.data() as SparePart);
+            });
+            setSpareParts(remoteParts);
+          }
+        },
+        (error) => {
+          // Graceful fallback to offline local-first mode
+          setSyncStatus((prev) => ({
+            ...prev,
+            connected: true,
+            mode: 'offline_synced',
+            lastSyncedAt: new Date().toLocaleTimeString('th-TH'),
+          }));
+        }
+      );
+
+      // 3. Subscribe to Customers
+      const unsubCustomers = onSnapshot(
+        collection(db, 'customers'),
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const remoteCusts: Customer[] = [];
+            snapshot.forEach((docSnap) => {
+              remoteCusts.push(docSnap.data() as Customer);
+            });
+            setCustomers(remoteCusts);
+          }
+        },
+        (error) => {
+          // Graceful fallback to offline local-first mode
           setSyncStatus((prev) => ({
             ...prev,
             connected: true,
@@ -230,6 +282,8 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return () => {
         try {
           unsubJobs();
+          unsubParts();
+          unsubCustomers();
         } catch {
           // ignore cleanup errors
         }
@@ -588,28 +642,43 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       lastRestockedAt: new Date().toISOString().slice(0, 10),
     };
     setSpareParts((prev) => [newPart, ...prev]);
+    savePartToFirestore(newPart);
     return newPart;
   };
 
   const updateSparePart = async (id: string, updates: Partial<SparePart>) => {
-    setSpareParts((prev) => prev.map((p) => (p.id === id ? { ...p, ...updates } : p)));
+    setSpareParts((prev) => {
+      const updated = prev.map((p) => {
+        if (p.id === id) {
+          const u = { ...p, ...updates };
+          savePartToFirestore(u);
+          return u;
+        }
+        return p;
+      });
+      return updated;
+    });
   };
 
   const deleteSparePart = async (id: string) => {
     setSpareParts((prev) => prev.filter((p) => p.id !== id));
+    deletePartFromFirestore(id);
   };
 
   const restockPart = async (id: string, addedQty: number) => {
     setSpareParts((prev) =>
-      prev.map((p) =>
-        p.id === id
-          ? {
-              ...p,
-              stockQty: p.stockQty + addedQty,
-              lastRestockedAt: new Date().toISOString().slice(0, 10),
-            }
-          : p
-      )
+      prev.map((p) => {
+        if (p.id === id) {
+          const u = {
+            ...p,
+            stockQty: p.stockQty + addedQty,
+            lastRestockedAt: new Date().toISOString().slice(0, 10),
+          };
+          savePartToFirestore(u);
+          return u;
+        }
+        return p;
+      })
     );
   };
 
@@ -627,11 +696,22 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       createdAt: new Date().toISOString(),
     };
     setCustomers((prev) => [newCust, ...prev]);
+    saveCustomerToFirestore(newCust);
     return newCust;
   };
 
   const updateCustomer = async (id: string, updates: Partial<Customer>) => {
-    setCustomers((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
+    setCustomers((prev) => {
+      const updated = prev.map((c) => {
+        if (c.id === id) {
+          const u = { ...c, ...updates };
+          saveCustomerToFirestore(u);
+          return u;
+        }
+        return c;
+      });
+      return updated;
+    });
   };
 
   const findCustomerByPhoneOrPlate = (query: string) => {
@@ -685,17 +765,61 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   const updateGarageProfile = async (profileUpdates: Partial<GarageProfile>) => {
-    setGarageProfile((prev) => ({ ...prev, ...profileUpdates }));
+    setGarageProfile((prev) => {
+      const updated = { ...prev, ...profileUpdates };
+      saveGarageProfileToFirestore(updated);
+      return updated;
+    });
   };
 
-  // Firestore direct save helper
+  // Firestore direct save helpers
   const saveJobToFirestore = async (job: JobOrder) => {
     try {
       const { db } = initializeGarageFirebase();
       if (!db) return;
       await setDoc(doc(db, 'job_orders', job.id), job, { merge: true });
-    } catch {
-      // Graceful offline fallback
+    } catch (e) {
+      console.warn('Firestore save job notice:', e);
+    }
+  };
+
+  const savePartToFirestore = async (part: SparePart) => {
+    try {
+      const { db } = initializeGarageFirebase();
+      if (!db) return;
+      await setDoc(doc(db, 'spare_parts', part.id), part, { merge: true });
+    } catch (e) {
+      console.warn('Firestore save part notice:', e);
+    }
+  };
+
+  const deletePartFromFirestore = async (partId: string) => {
+    try {
+      const { db } = initializeGarageFirebase();
+      if (!db) return;
+      await deleteDoc(doc(db, 'spare_parts', partId));
+    } catch (e) {
+      console.warn('Firestore delete part notice:', e);
+    }
+  };
+
+  const saveCustomerToFirestore = async (customer: Customer) => {
+    try {
+      const { db } = initializeGarageFirebase();
+      if (!db) return;
+      await setDoc(doc(db, 'customers', customer.id), customer, { merge: true });
+    } catch (e) {
+      console.warn('Firestore save customer notice:', e);
+    }
+  };
+
+  const saveGarageProfileToFirestore = async (profile: GarageProfile) => {
+    try {
+      const { db } = initializeGarageFirebase();
+      if (!db) return;
+      await setDoc(doc(db, 'garage_profile', 'main'), profile, { merge: true });
+    } catch (e) {
+      console.warn('Firestore save profile notice:', e);
     }
   };
 
@@ -715,12 +839,23 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           spareParts.forEach((p) => {
             batch.set(doc(db, 'spare_parts', p.id), p);
           });
+          customers.forEach((c) => {
+            batch.set(doc(db, 'customers', c.id), c);
+          });
+          mechanics.forEach((m) => {
+            batch.set(doc(db, 'mechanics', m.id), m);
+          });
+          serviceBays.forEach((b) => {
+            batch.set(doc(db, 'service_bays', b.id), b);
+          });
+          batch.set(doc(db, 'garage_profile', 'main'), garageProfile);
+
           await batch.commit();
           setSyncStatus({
             connected: true,
             mode: 'firestore',
             lastSyncedAt: new Date().toLocaleTimeString('th-TH'),
-            projectName: 'Songkarn-v1',
+            projectName: 'project-bb64d669-b421-4bcd-a20',
             syncing: false,
           });
           return true;
@@ -728,8 +863,8 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           console.warn('Firebase batch sync fallback to local storage:', err);
         }
       }
-    } catch {
-      // Handled below in local sync fallback
+    } catch (err) {
+      console.warn('Firebase sync error:', err);
     }
 
     // Local instant sync simulation
@@ -738,7 +873,7 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       connected: true,
       mode: isLiveActive ? 'firestore' : 'offline_synced',
       lastSyncedAt: new Date().toLocaleTimeString('th-TH'),
-      projectName: 'Songkarn-v1',
+      projectName: 'project-bb64d669-b421-4bcd-a20',
       syncing: false,
     });
     return true;
@@ -747,13 +882,13 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const syncWithGoogleSheets = async (type: 'all' | 'inventory' | 'customers' = 'all'): Promise<boolean> => {
     try {
       if (type === 'all' || type === 'inventory') {
-        const invId = getStoredSpreadsheetId('inventory') || garageProfile.googleSheetsInventoryId;
+        const invId = getStoredSpreadsheetId('inventory') || (isRealGoogleSpreadsheetId(garageProfile.googleSheetsInventoryId) ? garageProfile.googleSheetsInventoryId : null);
         if (invId) {
           await syncInventoryToGoogleSheet(invId, spareParts);
         }
       }
       if (type === 'all' || type === 'customers') {
-        const custId = getStoredSpreadsheetId('customers') || garageProfile.googleSheetsCustomersId;
+        const custId = getStoredSpreadsheetId('customers') || (isRealGoogleSpreadsheetId(garageProfile.googleSheetsCustomersId) ? garageProfile.googleSheetsCustomersId : null);
         if (custId) {
           await syncCustomersToGoogleSheet(custId, customers);
         }

@@ -202,27 +202,46 @@ export function getDurationDisplay(startDateIso?: string, endDateIso?: string): 
     return { text: 'ไม่ได้ระบุ', isOverdue: false, hoursDiff: 0 };
   }
 
-  const start = startDateIso ? new Date(startDateIso).getTime() : Date.now();
   const end = new Date(endDateIso).getTime();
-  const now = Date.now();
+  if (isNaN(end)) {
+    return { text: 'ไม่ได้ระบุ', isOverdue: false, hoursDiff: 0 };
+  }
 
-  const diffMs = end - start;
-  const hours = Math.round(diffMs / (1000 * 60 * 60));
+  const now = Date.now();
   const isOverdue = end < now;
 
-  if (hours <= 0) {
-    return { text: 'ครบกำหนดแล้ว', isOverdue: true, hoursDiff: hours };
+  if (isOverdue) {
+    const overdueMs = now - end;
+    const overdueHours = Math.round(overdueMs / (1000 * 60 * 60));
+    if (overdueHours < 1) {
+      return { text: 'ครบกำหนดแล้ว', isOverdue: true, hoursDiff: -overdueHours };
+    } else if (overdueHours < 24) {
+      return { text: `เกินกำหนด ${overdueHours} ชม.`, isOverdue: true, hoursDiff: -overdueHours };
+    } else {
+      const days = Math.floor(overdueHours / 24);
+      const remHours = overdueHours % 24;
+      const text = remHours > 0 ? `เกินกำหนด ${days} วัน ${remHours} ชม.` : `เกินกำหนด ${days} วัน`;
+      return { text, isOverdue: true, hoursDiff: -overdueHours };
+    }
   }
 
-  if (hours < 24) {
-    return { text: `${hours} ชั่วโมง`, isOverdue, hoursDiff: hours };
+  // Not overdue: remaining time from current moment
+  const remainingMs = end - now;
+  const remainingHours = Math.round(remainingMs / (1000 * 60 * 60));
+
+  if (remainingHours <= 0) {
+    return { text: 'กำลังจะครบกำหนด', isOverdue: false, hoursDiff: 0 };
   }
 
-  const days = Math.floor(hours / 24);
-  const remainingHours = hours % 24;
-  const text = remainingHours > 0 ? `${days} วัน ${remainingHours} ชม.` : `${days} วัน`;
+  if (remainingHours < 24) {
+    return { text: `เหลือ ${remainingHours} ชม.`, isOverdue: false, hoursDiff: remainingHours };
+  }
 
-  return { text, isOverdue, hoursDiff: hours };
+  const days = Math.floor(remainingHours / 24);
+  const remHours = remainingHours % 24;
+  const text = remHours > 0 ? `เหลือ ${days} วัน ${remHours} ชม.` : `เหลือ ${days} วัน`;
+
+  return { text, isOverdue: false, hoursDiff: remainingHours };
 }
 
 /**

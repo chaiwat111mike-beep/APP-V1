@@ -54,14 +54,14 @@ export const ServiceBaysView: React.FC<ServiceBaysViewProps> = ({
         </button>
       </div>
 
-      {/* 6 Service Bays Floor Plan */}
+      {/* 3 Service Bays Floor Plan */}
       <div className="space-y-3">
         <h2 className="text-sm font-bold text-gray-200 flex items-center gap-2">
           <Car className="w-4 h-4 text-orange-500" />
-          <span>ผังช่องซ่อมและลิฟต์ยกรถ (Garage Floor Plan)</span>
+          <span>ผังช่องซ่อมและลิฟต์ยกรถ 3 ช่อง (Garage Floor Plan)</span>
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {serviceBays.map((bay) => {
             const currentJob = jobOrders.find((j) => j.id === bay.currentJobId);
             const isOccupied = bay.status === 'occupied' && currentJob;
