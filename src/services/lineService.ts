@@ -196,8 +196,9 @@ export const generateJobIntakeMessage = (job: JobOrder, garage: GarageProfile): 
 export const generateJobStatusUpdateMessage = (job: JobOrder, garage: GarageProfile): string => {
   const statusThai = formatJobStatusThai(job.status);
   const deliveryDate = formatThaiDateTime(job.estimatedCompletionDate);
-  const partsSummary = job.partsUsed.length > 0
-    ? job.partsUsed.map((p, i) => `   ${i + 1}. ${p.partName} x${p.quantity} (฿${p.totalPrice.toLocaleString()})`).join('\n')
+  const partsList = job.partsUsed || [];
+  const partsSummary = partsList.length > 0
+    ? partsList.map((p, i) => `   ${i + 1}. ${p.partName} x${p.quantity} (฿${(p.totalPrice || 0).toLocaleString()})`).join('\n')
     : '   - รอสรุปรายการ';
 
   return `🔔【 อัปเดตสถานะงานซ่อมรถยนต์ 】
@@ -213,8 +214,8 @@ ${job.technicianNotes ? `📝 รายงานจากช่าง:\n"${job.t
 📦 อะไหล่ที่ติดตั้ง/ใช้งาน:
 ${partsSummary}
 
-💰 ยอดค่าใช้จ่ายรวม: ฿${job.totalAmount.toLocaleString()} บาท
-${(job.depositAmount || job.paidAmount || 0) > 0 ? `💵 มัดจำแล้ว: ฿${(job.depositAmount || job.paidAmount || 0).toLocaleString()} (คงเหลือ ฿${Math.max(0, job.totalAmount - (job.depositAmount || job.paidAmount || 0)).toLocaleString()})\n` : ''}━━━━━━━━━━━━━━━━
+💰 ยอดค่าใช้จ่ายรวม: ฿${(job.totalAmount || 0).toLocaleString()} บาท
+${(job.depositAmount || job.paidAmount || 0) > 0 ? `💵 มัดจำแล้ว: ฿${(job.depositAmount || job.paidAmount || 0).toLocaleString()} (คงเหลือ ฿${Math.max(0, (job.totalAmount || 0) - (job.depositAmount || job.paidAmount || 0)).toLocaleString()})\n` : ''}━━━━━━━━━━━━━━━━
 📞 สอบถามเพิ่มเติม: ${garage.mechanicPhone || garage.phone || DEFAULT_MECHANIC_PHONE}
 📲 LINE: ${garage.lineId || DEFAULT_LINE_ID} (${garage.lineDirectUrl || DEFAULT_LINE_URL})`;
 };
@@ -223,8 +224,9 @@ ${(job.depositAmount || job.paidAmount || 0) > 0 ? `💵 มัดจำแล�
  * Template 3: แจ้งซ่อมเสร็จ & สรุปยอดเงินพร้อมรับรถ
  */
 export const generateJobCompletedMessage = (job: JobOrder, garage: GarageProfile): string => {
-  const partsTotal = job.partsUsed.reduce((sum, p) => sum + p.totalPrice, 0);
-  const subtotal = partsTotal + job.laborFee + (job.otherFee || 0) - job.discount;
+  const partsList = job.partsUsed || [];
+  const partsTotal = partsList.reduce((sum, p) => sum + (p.totalPrice || 0), 0);
+  const subtotal = partsTotal + (job.laborFee || 0) + (job.otherFee || 0) - (job.discount || 0);
   const vat = subtotal > 0 ? (subtotal * (job.vatPercent ?? 7)) / 100 : 0;
   const grandTotal = Math.max(0, subtotal + vat);
   const deposit = job.depositAmount || job.paidAmount || 0;
@@ -240,9 +242,9 @@ ${garage.garageName || garage.name || 'อู่สงกรานต์ (ช่
 🔢 เลขที่ใบสั่งซ่อม: ${job.jobNo}
 
 💵 รายละเอียดค่าใช้จ่าย:
-• รวมค่าอะไหล่ (${job.partsUsed.length} รายการ): ฿${partsTotal.toLocaleString()}
-• ค่าแรง & บริการ: ฿${job.laborFee.toLocaleString()}
-${(job.otherFee || 0) > 0 ? `• ค่าบริการอื่นๆ: ฿${job.otherFee?.toLocaleString()}\n` : ''}${job.discount > 0 ? `• ส่วนลด: -฿${job.discount.toLocaleString()}\n` : ''}• ภาษี VAT (${job.vatPercent ?? 7}%): ฿${vat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+• รวมค่าอะไหล่ (${partsList.length} รายการ): ฿${partsTotal.toLocaleString()}
+• ค่าแรง & บริการ: ฿${(job.laborFee || 0).toLocaleString()}
+${(job.otherFee || 0) > 0 ? `• ค่าบริการอื่นๆ: ฿${job.otherFee?.toLocaleString()}\n` : ''}${(job.discount || 0) > 0 ? `• ส่วนลด: -฿${job.discount?.toLocaleString()}\n` : ''}• ภาษี VAT (${job.vatPercent ?? 7}%): ฿${vat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 ━━━━━━━━━━━━━━━━
 ⭐ ยอดสุทธิทั้งสิ้น: ฿${grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท
 ${deposit > 0 ? `💰 มัดจำที่ชำระแล้ว: ฿${deposit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n🔥 ยอดคงเหลือชำระวันรับรถ: ฿${remaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท\n` : ''}
@@ -309,8 +311,9 @@ ${job.technicianNotes ? `📝 ช่างแจ้ง: ${job.technicianNotes.sl
 };
 
 export const generateJobCompletedConcise = (job: JobOrder, garage: GarageProfile): string => {
-  const partsTotal = job.partsUsed.reduce((sum, p) => sum + p.totalPrice, 0);
-  const subtotal = partsTotal + job.laborFee + (job.otherFee || 0) - job.discount;
+  const partsList = job.partsUsed || [];
+  const partsTotal = partsList.reduce((sum, p) => sum + (p.totalPrice || 0), 0);
+  const subtotal = partsTotal + (job.laborFee || 0) + (job.otherFee || 0) - (job.discount || 0);
   const vat = subtotal > 0 ? (subtotal * (job.vatPercent ?? 7)) / 100 : 0;
   const grandTotal = Math.max(0, subtotal + vat);
 

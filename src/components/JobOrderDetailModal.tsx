@@ -26,7 +26,11 @@ import {
   Percent,
   Calendar,
   Layers,
-  Edit3
+  Edit3,
+  History,
+  ChevronDown,
+  ChevronUp,
+  Eye
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { JobOrder, JobStatus, PaymentMethod, PaymentStatus, SparePart } from '../types';
@@ -46,6 +50,7 @@ interface JobOrderDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   onPrintJob: (job: JobOrder, docType: 'job_order' | 'quotation' | 'receipt') => void;
+  onSwitchJob?: (newJobId: string) => void;
 }
 
 export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
@@ -53,6 +58,7 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
   isOpen,
   onClose,
   onPrintJob,
+  onSwitchJob,
 }) => {
   const {
     jobOrders,
@@ -68,7 +74,27 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
     deleteJobOrder,
   } = useGarage();
 
-  const job = jobOrders.find((j) => j.id === jobId);
+  const [activeJobId, setActiveJobId] = useState<string | null>(jobId);
+
+  useEffect(() => {
+    setActiveJobId(jobId);
+  }, [jobId]);
+
+  const job = jobOrders.find((j) => j.id === (activeJobId || jobId));
+
+  // Past jobs for this vehicle
+  const pastJobsForCar = useMemo(() => {
+    if (!job) return [];
+    return jobOrders
+      .filter(
+        (j) =>
+          j.id !== job.id &&
+          j.licensePlate.trim().toLowerCase() === job.licensePlate.trim().toLowerCase()
+      )
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [jobOrders, job]);
+
+  const [isVehicleHistoryOpen, setIsVehicleHistoryOpen] = useState<boolean>(false);
 
   // Local editable states
   const [selectedPartId, setSelectedPartId] = useState<string>('');
@@ -165,6 +191,7 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
   };
 
   const handleSaveFinancials = () => {
+    const isAlreadyPaid = job.paymentStatus === 'paid';
     updateJobOrder(job.id, {
       laborFee: financials.laborFee,
       otherFee: financials.otherFee,
@@ -175,8 +202,8 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
       vatPercent: financials.vatPercent,
       totalAmount: financials.grandTotal,
       depositAmount: financials.depositAmount,
-      paidAmount: financials.depositAmount,
-      paymentStatus: financials.suggestedPaymentStatus !== 'unpaid' ? financials.suggestedPaymentStatus : job.paymentStatus,
+      paidAmount: isAlreadyPaid ? financials.grandTotal : (financials.depositAmount || job.paidAmount || 0),
+      paymentStatus: isAlreadyPaid ? 'paid' : (financials.suggestedPaymentStatus !== 'unpaid' ? financials.suggestedPaymentStatus : job.paymentStatus),
     });
   };
 
@@ -369,6 +396,100 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
             {/* Left 2 Cols: Repair Details & Parts Management */}
             <div className="lg:col-span-2 space-y-6">
               
+              {/* Vehicle History Archive Banner (ประวัติการซ่อมย้อนหลังของรถคันนี้) */}
+              {pastJobsForCar.length > 0 && (
+                <div className="bg-[#0F1113] p-4 rounded-xl border border-blue-500/30 space-y-3">
+                  <div
+                    onClick={() => setIsVehicleHistoryOpen(!isVehicleHistoryOpen)}
+                    className="flex items-center justify-between cursor-pointer select-none"
+                  >
+                    <div className="flex items-center gap-2">
+                      <History className="w-4 h-4 text-blue-400" />
+                      <span className="text-xs font-bold text-blue-400 uppercase tracking-wide">
+                        ประวัติการซ่อมย้อนหลังของรถคันนี้ (พบ {pastJobsForCar.length} ใบสั่งซ่อมเดิม)
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="text-xs text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1"
+                    >
+                      <span>{isVehicleHistoryOpen ? 'ย่อประวัติ' : 'ดูประวัติย้อนหลัง'}</span>
+                      {isVehicleHistoryOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+
+                  {isVehicleHistoryOpen && (
+                    <div className="space-y-2.5 pt-2 border-t border-[#2D3135]">
+                      <p className="text-[11px] text-gray-400">
+                        รถทะเบียน <span className="font-mono font-bold text-amber-400">{job.licensePlate}</span> เคยมีประวัติการเข้าซ่อมบำรุงในอู่ตามรายการด้านล่างนี้:
+                      </p>
+                      {pastJobsForCar.map((pj) => (
+                        <div
+                          key={pj.id}
+                          className="p-3 bg-[#16191D] border border-[#2D3135] hover:border-blue-500/50 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs transition-all"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono font-bold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20 text-[11px]">
+                                {pj.jobNo}
+                              </span>
+                              <span className="text-gray-400 text-[11px]">
+                                {pj.receivedDate ? formatThaiDateTime(pj.receivedDate) : formatThaiDateTime(pj.createdAt)}
+                              </span>
+                              <span className="text-gray-400 text-[11px] font-mono">
+                                • ไมล์ {(pj.mileage || 0).toLocaleString()} กม.
+                              </span>
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#0F1113] border border-[#2D3135] text-gray-300">
+                                {pj.status === 'delivered' ? 'ส่งมอบแล้ว' : pj.status === 'completed' ? 'ซ่อมเสร็จ' : 'กำลังซ่อม'}
+                              </span>
+                            </div>
+                            <p className="text-gray-200 font-medium">{pj.issueDescription}</p>
+                            {pj.partsUsed.length > 0 && (
+                              <p className="text-[11px] text-gray-400">
+                                อะไหล่ที่เปลี่ยน: {pj.partsUsed.map((p) => `${p.partName} x${p.quantity}`).join(', ')}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#2D3135]">
+                            <div className="text-left sm:text-right">
+                              <span className="font-mono font-bold text-emerald-400 block">
+                                ฿{(pj.totalAmount || 0).toLocaleString()}
+                              </span>
+                              <span className="text-[10px] text-gray-400">
+                                {pj.paymentStatus === 'paid' ? '✅ ชำระแล้ว' : '⏳ ค้างชำระ'}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => onPrintJob(pj, 'receipt')}
+                                className="p-1.5 rounded-lg bg-[#0F1113] hover:bg-[#1C2025] border border-[#2D3135] text-gray-300 hover:text-white"
+                                title="พิมพ์ใบเสร็จย้อนหลัง"
+                              >
+                                <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveJobId(pj.id);
+                                  if (onSwitchJob) onSwitchJob(pj.id);
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] flex items-center gap-1 shadow-sm active:scale-95"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>เปิดดูใบนี้</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Symptoms & Vehicle Inspection */}
               <div className="bg-[#0F1113] p-4 rounded-xl border border-[#2D3135] space-y-3">
                 <h3 className="text-xs font-bold text-orange-400 uppercase tracking-wider flex items-center gap-2">
@@ -510,14 +631,14 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#2D3135]">
-                      {job.partsUsed.length === 0 ? (
+                      {(job.partsUsed || []).length === 0 ? (
                         <tr>
                           <td colSpan={5} className="px-3 py-6 text-center text-gray-500">
                             ยังไม่มีการเบิกอะไหล่สำหรับใบสั่งซ่อมนี้
                           </td>
                         </tr>
                       ) : (
-                        job.partsUsed.map((p) => (
+                        (job.partsUsed || []).map((p) => (
                           <tr key={p.partId} className="hover:bg-[#1C2025]">
                             <td className="px-3 py-2.5">
                               <span className="font-semibold text-gray-200 block">{p.partName}</span>
@@ -527,10 +648,10 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
                               {p.quantity}
                             </td>
                             <td className="px-3 py-2.5 text-right font-mono">
-                              ฿{p.unitPrice.toLocaleString()}
+                              ฿{(p.unitPrice || 0).toLocaleString()}
                             </td>
                             <td className="px-3 py-2.5 text-right font-bold text-white font-mono">
-                              ฿{p.totalPrice.toLocaleString()}
+                              ฿{(p.totalPrice || 0).toLocaleString()}
                             </td>
                             <td className="px-3 py-2.5 text-center">
                               <button
@@ -573,8 +694,8 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
                   
                   {/* Parts Subtotal */}
                   <div className="flex justify-between text-gray-300">
-                    <span>รวมค่าอะไหล่ ({job.partsUsed.length} รายการ):</span>
-                    <span className="font-semibold text-white font-mono">฿{financials.partsTotal.toLocaleString()}</span>
+                    <span>รวมค่าอะไหล่ ({(job.partsUsed || []).length} รายการ):</span>
+                    <span className="font-semibold text-white font-mono">฿{(financials.partsTotal || 0).toLocaleString()}</span>
                   </div>
 
                   {/* Labor Fee */}

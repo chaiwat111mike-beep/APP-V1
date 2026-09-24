@@ -35,10 +35,28 @@ import {
   createCustomersSpreadsheet,
   syncInventoryToGoogleSheet,
   syncCustomersToGoogleSheet,
+  syncJobOrdersToGoogleSheet,
+  syncFinancialSummaryToGoogleSheet,
+  syncAllToGoogleSheet,
   getStoredSpreadsheetId,
-  isRealGoogleSpreadsheetId
+  setStoredSpreadsheetId,
+  getStoredGoogleToken,
+  isRealGoogleSpreadsheetId,
+  TARGET_SPREADSHEET_ID,
+  DEFAULT_SPREADSHEET_URL
 } from '../services/googleSheetsService';
 import { calculateJobBreakdown, generateAutoJobNo, CalculationBreakdown } from '../utils/jobCalculator';
+
+export interface GoogleSheetsLiveSyncState {
+  connected: boolean;
+  syncing: boolean;
+  lastSyncedAt: string | null;
+  spreadsheetId: string;
+  spreadsheetUrl: string;
+  autoSync: boolean;
+  error: string | null;
+  syncedTabs: string[];
+}
 
 interface GarageContextType {
   jobOrders: JobOrder[];
@@ -48,6 +66,7 @@ interface GarageContextType {
   serviceBays: ServiceBay[];
   garageProfile: GarageProfile;
   syncStatus: FirebaseSyncStatus;
+  googleSheetsSyncStatus: GoogleSheetsLiveSyncState;
   
   // Job operations
   generateJobNo: (prefix?: string, format?: 'daily' | 'monthly') => string;
@@ -79,7 +98,9 @@ interface GarageContextType {
   // Settings & Sync
   updateGarageProfile: (profile: Partial<GarageProfile>) => Promise<void>;
   syncWithFirebase: () => Promise<boolean>;
-  syncWithGoogleSheets: (type?: 'all' | 'inventory' | 'customers') => Promise<boolean>;
+  syncWithGoogleSheets: (type?: 'all' | 'inventory' | 'customers' | 'jobs') => Promise<boolean>;
+  setGoogleSheetId: (id: string) => void;
+  toggleGoogleSheetAutoSync: (enabled?: boolean) => void;
   resetToDefaultData: () => void;
   exportDatabaseJson: () => string;
   importDatabaseJson: (jsonStr: string) => boolean;
@@ -127,9 +148,18 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [mechanics, setMechanics] = useState<MechanicStaff[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.MECHANICS);
-      return saved ? JSON.parse(saved) : initialMechanics;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.slice(0, 3).map((m: MechanicStaff, idx: number) => ({
+            ...m,
+            positionTitle: m.positionTitle || initialMechanics[idx]?.positionTitle || `ตำแหน่งที่ ${idx + 1}`,
+          }));
+        }
+      }
+      return initialMechanics.slice(0, 3);
     } catch {
-      return initialMechanics;
+      return initialMechanics.slice(0, 3);
     }
   });
 
@@ -164,6 +194,60 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     projectName: 'Songkarn-v1',
     syncing: false,
   });
+
+  const [googleSheetsSyncStatus, setGoogleSheetsSyncStatus] = useState<GoogleSheetsLiveSyncState>(() => {
+    const currentId = getStoredSpreadsheetId('all') || TARGET_SPREADSHEET_ID;
+    return {
+      connected: true,
+      syncing: false,
+      lastSyncedAt: new Date().toLocaleTimeString('th-TH'),
+      spreadsheetId: currentId,
+      spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${currentId}/edit`,
+      autoSync: true,
+      error: null,
+      syncedTabs: ['คลังสต็อกอะไหล่', 'ใบสั่งซ่อมและสถานะ', 'ประวัติลูกค้าและรถยนต์', 'สรุปภาพรวมและการเงิน'],
+    };
+  });
+
+  // Real-time automatic background debounce sync to Google Sheets
+  const isInitialMount = React.useRef(true);
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    if (!googleSheetsSyncStatus.autoSync) return;
+
+    const timer = setTimeout(async () => {
+      const token = getStoredGoogleToken();
+      if (!token) return;
+      try {
+        setGoogleSheetsSyncStatus((prev) => ({ ...prev, syncing: true, error: null }));
+        const targetId = googleSheetsSyncStatus.spreadsheetId || TARGET_SPREADSHEET_ID;
+        const res = await syncAllToGoogleSheet(targetId, {
+          parts: spareParts,
+          customers: customers,
+          jobOrders: jobOrders,
+        });
+        setGoogleSheetsSyncStatus((prev) => ({
+          ...prev,
+          syncing: false,
+          lastSyncedAt: new Date().toLocaleTimeString('th-TH'),
+          connected: true,
+          syncedTabs: res.syncedTabs,
+          error: res.errors.length > 0 ? res.errors.join('; ') : null,
+        }));
+      } catch (err: any) {
+        setGoogleSheetsSyncStatus((prev) => ({
+          ...prev,
+          syncing: false,
+          error: err?.message || 'Sync failed',
+        }));
+      }
+    }, 3500);
+
+    return () => clearTimeout(timer);
+  }, [jobOrders, spareParts, customers, googleSheetsSyncStatus.autoSync, googleSheetsSyncStatus.spreadsheetId]);
 
   // Local persistence helpers
   useEffect(() => {
@@ -307,6 +391,8 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setSpareParts(JSON.parse(e.newValue));
       } else if (e.key === STORAGE_KEYS.CUSTOMERS && e.newValue) {
         setCustomers(JSON.parse(e.newValue));
+      } else if (e.key === STORAGE_KEYS.MECHANICS && e.newValue) {
+        setMechanics(JSON.parse(e.newValue).slice(0, 3));
       } else if (e.key === STORAGE_KEYS.BAYS && e.newValue) {
         setServiceBays(JSON.parse(e.newValue));
       }
@@ -374,6 +460,19 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
 
     setJobOrders((prev) => [newJob, ...prev]);
+
+    // Deduct stock for parts selected during initial creation
+    if (newJob.partsUsed && newJob.partsUsed.length > 0) {
+      setSpareParts((prev) =>
+        prev.map((part) => {
+          const used = newJob.partsUsed.find((p) => p.partId === part.id);
+          if (used) {
+            return { ...part, stockQty: Math.max(0, part.stockQty - used.quantity) };
+          }
+          return part;
+        })
+      );
+    }
 
     // Update or create Customer CRM record automatically
     updateOrCreateCustomerRecord(newJob);
@@ -499,15 +598,23 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           updatedParts.push(newItem);
         }
 
-        const partsTotal = updatedParts.reduce((sum, p) => sum + p.totalPrice, 0);
-        const subtotal = partsTotal + (job.laborFee || 0) + (job.otherFee || 0) - (job.discount || 0);
-        const vat = subtotal > 0 ? (subtotal * (job.vatPercent ?? 7)) / 100 : 0;
-        const total = Math.max(0, subtotal + vat);
+        const breakdown = calculateJobBreakdown({
+          parts: updatedParts,
+          laborFee: job.laborFee || 0,
+          otherFee: job.otherFee || 0,
+          discount: job.discount || 0,
+          discountType: job.discountType || 'amount',
+          discountPercent: job.discountPercent || 0,
+          vatPercent: job.vatPercent,
+          enableVat: (job.vatPercent ?? 7) > 0,
+          depositAmount: job.depositAmount || job.paidAmount || 0,
+        });
 
         const updatedJob: JobOrder = {
           ...job,
           partsUsed: updatedParts,
-          totalAmount: total,
+          totalAmount: breakdown.grandTotal,
+          paidAmount: job.paymentStatus === 'paid' ? breakdown.grandTotal : job.paidAmount,
           updatedAt: new Date().toISOString(),
         };
 
@@ -529,15 +636,23 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
 
         const updatedParts = job.partsUsed.filter((p) => p.partId !== partId);
-        const partsTotal = updatedParts.reduce((sum, p) => sum + p.totalPrice, 0);
-        const subtotal = partsTotal + (job.laborFee || 0) + (job.otherFee || 0) - (job.discount || 0);
-        const vat = subtotal > 0 ? (subtotal * (job.vatPercent ?? 7)) / 100 : 0;
-        const total = Math.max(0, subtotal + vat);
+        const breakdown = calculateJobBreakdown({
+          parts: updatedParts,
+          laborFee: job.laborFee || 0,
+          otherFee: job.otherFee || 0,
+          discount: job.discount || 0,
+          discountType: job.discountType || 'amount',
+          discountPercent: job.discountPercent || 0,
+          vatPercent: job.vatPercent,
+          enableVat: (job.vatPercent ?? 7) > 0,
+          depositAmount: job.depositAmount || job.paidAmount || 0,
+        });
 
         const updatedJob: JobOrder = {
           ...job,
           partsUsed: updatedParts,
-          totalAmount: total,
+          totalAmount: breakdown.grandTotal,
+          paidAmount: job.paymentStatus === 'paid' ? breakdown.grandTotal : job.paidAmount,
           updatedAt: new Date().toISOString(),
         };
         saveJobToFirestore(updatedJob);
@@ -879,25 +994,75 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     return true;
   };
 
-  const syncWithGoogleSheets = async (type: 'all' | 'inventory' | 'customers' = 'all'): Promise<boolean> => {
+  const syncWithGoogleSheets = async (type: 'all' | 'inventory' | 'customers' | 'jobs' = 'all'): Promise<boolean> => {
+    setGoogleSheetsSyncStatus((prev) => ({ ...prev, syncing: true, error: null }));
     try {
-      if (type === 'all' || type === 'inventory') {
-        const invId = getStoredSpreadsheetId('inventory') || (isRealGoogleSpreadsheetId(garageProfile.googleSheetsInventoryId) ? garageProfile.googleSheetsInventoryId : null);
-        if (invId) {
-          await syncInventoryToGoogleSheet(invId, spareParts);
-        }
+      const targetId = googleSheetsSyncStatus.spreadsheetId || TARGET_SPREADSHEET_ID;
+      if (type === 'all') {
+        const res = await syncAllToGoogleSheet(targetId, {
+          parts: spareParts,
+          customers: customers,
+          jobOrders: jobOrders,
+        });
+        setGoogleSheetsSyncStatus((prev) => ({
+          ...prev,
+          syncing: false,
+          connected: true,
+          lastSyncedAt: new Date().toLocaleTimeString('th-TH'),
+          syncedTabs: res.syncedTabs,
+          error: res.errors.length > 0 ? res.errors.join('; ') : null,
+        }));
+        return res.success;
+      } else if (type === 'inventory') {
+        await syncInventoryToGoogleSheet(targetId, spareParts);
+      } else if (type === 'customers') {
+        await syncCustomersToGoogleSheet(targetId, customers);
+      } else if (type === 'jobs') {
+        await syncJobOrdersToGoogleSheet(targetId, jobOrders);
       }
-      if (type === 'all' || type === 'customers') {
-        const custId = getStoredSpreadsheetId('customers') || (isRealGoogleSpreadsheetId(garageProfile.googleSheetsCustomersId) ? garageProfile.googleSheetsCustomersId : null);
-        if (custId) {
-          await syncCustomersToGoogleSheet(custId, customers);
-        }
-      }
+      setGoogleSheetsSyncStatus((prev) => ({
+        ...prev,
+        syncing: false,
+        connected: true,
+        lastSyncedAt: new Date().toLocaleTimeString('th-TH'),
+      }));
       return true;
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Google Sheets sync notice:', e);
+      setGoogleSheetsSyncStatus((prev) => ({
+        ...prev,
+        syncing: false,
+        error: e?.message || 'การซิงค์ข้อมูลล้มเหลว',
+      }));
       return false;
     }
+  };
+
+  const setGoogleSheetId = (id: string) => {
+    const cleanId = id.trim();
+    if (cleanId) {
+      setStoredSpreadsheetId('all', cleanId);
+      setGoogleSheetsSyncStatus((prev) => ({
+        ...prev,
+        spreadsheetId: cleanId,
+        spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${cleanId}/edit`,
+      }));
+      setGarageProfile((prev) => ({
+        ...prev,
+        googleSheetsId: cleanId,
+        googleSheetsInventoryId: cleanId,
+        googleSheetsCustomersId: cleanId,
+        googleSheetsJobOrdersId: cleanId,
+      }));
+    }
+  };
+
+  const toggleGoogleSheetAutoSync = (enabled?: boolean) => {
+    setGoogleSheetsSyncStatus((prev) => {
+      const nextVal = enabled !== undefined ? enabled : !prev.autoSync;
+      setGarageProfile((gp) => ({ ...gp, autoSyncGoogleSheets: nextVal }));
+      return { ...prev, autoSync: nextVal };
+    });
   };
 
   const resetToDefaultData = () => {
@@ -972,6 +1137,9 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         updateGarageProfile,
         syncWithFirebase,
         syncWithGoogleSheets,
+        googleSheetsSyncStatus,
+        setGoogleSheetId,
+        toggleGoogleSheetAutoSync,
         resetToDefaultData,
         exportDatabaseJson,
         importDatabaseJson,

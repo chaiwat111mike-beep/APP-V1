@@ -15,7 +15,8 @@ import {
   Calendar,
   Sparkles,
   DollarSign,
-  QrCode
+  QrCode,
+  History
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { JobOrder, JobStatus } from '../types';
@@ -47,8 +48,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const deliveredJobs = jobOrders.filter((j) => j.status === 'delivered');
   const lowStockParts = spareParts.filter((p) => p.stockQty <= p.minStockQty);
   
-  const totalRevenue = jobOrders.reduce((sum, j) => sum + (j.paidAmount || (j.paymentStatus === 'paid' ? j.totalAmount : 0)), 0);
-  const pendingRevenue = jobOrders.reduce((sum, j) => sum + (j.paymentStatus !== 'paid' ? (j.totalAmount - (j.paidAmount || 0)) : 0), 0);
+  const totalRevenue = jobOrders.reduce((sum, j) => sum + (j.paidAmount || (j.paymentStatus === 'paid' ? (j.totalAmount || 0) : 0)), 0);
+  const pendingRevenue = jobOrders.reduce((sum, j) => sum + (j.paymentStatus !== 'paid' ? (Math.max(0, (j.totalAmount || 0) - (j.paidAmount || 0))) : 0), 0);
 
   const getStatusBadge = (status: JobStatus) => {
     switch (status) {
@@ -98,8 +99,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={() => setIsPromptPayModalOpen(true)}
+            onClick={() => navigateTo('history')}
             className="px-4 py-2.5 rounded-lg bg-blue-950/40 hover:bg-blue-900/60 border border-blue-600/40 text-blue-300 font-bold text-sm transition-all flex items-center gap-2 active:scale-95 shadow-sm"
+            title="เปิดดูประวัติใบซ่อมย้อนหลังทั้งหมดและไทม์ไลน์การซ่อม"
+          >
+            <History className="w-4 h-4 text-blue-400" />
+            <span>ประวัติใบซ่อมย้อนหลัง</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsPromptPayModalOpen(true)}
+            className="px-4 py-2.5 rounded-lg bg-[#0F1113] hover:bg-[#1C2025] border border-[#2D3135] text-gray-200 font-medium text-sm transition-all flex items-center gap-2 active:scale-95 shadow-sm"
           >
             <QrCode className="w-4 h-4 text-blue-400" />
             <span>QR รับชำระเงิน</span>
@@ -250,8 +260,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* 3 Bays Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {serviceBays.map((bay) => {
-            const currentJob = jobOrders.find((j) => j.id === bay.currentJobId);
-            const isOccupied = bay.status === 'occupied' && currentJob;
+            const currentJob = jobOrders.find(
+              (j) =>
+                (bay.currentJobId && j.id === bay.currentJobId) ||
+                (j.bayNumber === bay.bayNumber && j.status !== 'delivered' && j.status !== 'completed')
+            );
+            const isOccupied = (bay.status === 'occupied' || !!currentJob) && bay.status !== 'maintenance' && !!currentJob;
 
             return (
               <div
@@ -466,12 +480,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             )}
           </div>
 
-          {/* Quick Staff Mechanic Status */}
+          {/* Quick Staff Mechanic Status (3 Positions) */}
           <div className="bg-[#16191D] border border-[#2D3135] rounded-xl p-5 shadow-md space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
                 <Users className="w-4 h-4 text-orange-400" />
-                <span>ทีมช่างประจำอู่ ({mechanics.length} ท่าน)</span>
+                <span>ทีมช่างประจำอู่ (3 ตำแหน่ง)</span>
               </h2>
               <button
                 onClick={() => navigateTo('bays')}
@@ -481,23 +495,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </button>
             </div>
 
-            <div className="space-y-2">
-              {mechanics.map((mech) => (
+            <div className="space-y-2.5">
+              {mechanics.slice(0, 3).map((mech, index) => (
                 <div
                   key={mech.id}
-                  className="p-2.5 bg-[#0F1113] border border-[#2D3135] rounded-xl flex items-center justify-between text-xs"
+                  className="p-3 bg-[#0F1113] border border-[#2D3135] rounded-xl flex items-center justify-between text-xs hover:border-orange-500/30 transition-all"
                 >
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-[#1C2025] border border-[#2D3135] flex items-center justify-center font-bold text-orange-400 text-xs">
-                      {mech.name.slice(4, 5)}
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center font-bold text-orange-400 text-xs shrink-0 font-mono">
+                      #{index + 1}
                     </div>
                     <div>
-                      <p className="font-semibold text-gray-200">{mech.name}</p>
-                      <p className="text-[10px] text-gray-400">{mech.specialties.join(', ')}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="font-semibold text-gray-200">{mech.name}</p>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20 font-medium">
+                          {mech.positionTitle || `ตำแหน่งที่ ${index + 1}`}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-0.5">{mech.specialties.join(' • ')}</p>
                     </div>
                   </div>
                   <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase shrink-0 ${
                       mech.status === 'available'
                         ? 'bg-green-500/10 text-green-400 border border-green-500/20'
                         : 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20'

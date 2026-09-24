@@ -1,4 +1,4 @@
-import { SparePart, Customer } from '../types';
+import { SparePart, Customer, JobOrder } from '../types';
 import appletConfig from '../../firebase-applet-config.json';
 
 export interface GoogleAuthToken {
@@ -8,11 +8,16 @@ export interface GoogleAuthToken {
   scope?: string;
 }
 
+export const TARGET_SPREADSHEET_ID = '1XIH-RiKcciGRgWwNgQQ7ECsqnmMOX5pZNEAheJrtrYA';
+export const DEFAULT_SPREADSHEET_URL = `https://docs.google.com/spreadsheets/d/${TARGET_SPREADSHEET_ID}/edit`;
+
 const STORAGE_KEYS = {
   ACCESS_TOKEN: 'songkarn_google_access_token',
   USER_EMAIL: 'songkarn_google_user_email',
+  PRIMARY_SHEET_ID: 'songkarn_primary_sheet_id',
   INVENTORY_SHEET_ID: 'songkarn_inventory_sheet_id',
   CUSTOMERS_SHEET_ID: 'songkarn_customers_sheet_id',
+  JOB_ORDERS_SHEET_ID: 'songkarn_job_orders_sheet_id',
 };
 
 export const GOOGLE_CLIENT_ID =
@@ -92,43 +97,69 @@ export const extractSpreadsheetId = (input: string): string => {
 };
 
 export const getSpreadsheetUrl = (id: string | null | undefined): string | null => {
-  if (!id || !isRealGoogleSpreadsheetId(id)) return null;
-  return `https://docs.google.com/spreadsheets/d/${id}/edit`;
+  const targetId = id || TARGET_SPREADSHEET_ID;
+  if (!isRealGoogleSpreadsheetId(targetId)) return null;
+  return `https://docs.google.com/spreadsheets/d/${targetId}/edit`;
 };
 
-export const getStoredSpreadsheetId = (type: 'inventory' | 'customers'): string | null => {
+export const getStoredSpreadsheetId = (type: 'inventory' | 'customers' | 'jobs' | 'all' = 'all'): string => {
   try {
-    const key = type === 'inventory' ? STORAGE_KEYS.INVENTORY_SHEET_ID : STORAGE_KEYS.CUSTOMERS_SHEET_ID;
-    const id = localStorage.getItem(key);
-    if (!id) return null;
-    if (!isRealGoogleSpreadsheetId(id)) {
-      localStorage.removeItem(key);
-      return null;
+    let key = STORAGE_KEYS.PRIMARY_SHEET_ID;
+    if (type === 'inventory') key = STORAGE_KEYS.INVENTORY_SHEET_ID;
+    else if (type === 'customers') key = STORAGE_KEYS.CUSTOMERS_SHEET_ID;
+    else if (type === 'jobs') key = STORAGE_KEYS.JOB_ORDERS_SHEET_ID;
+
+    const id = localStorage.getItem(key) || localStorage.getItem(STORAGE_KEYS.PRIMARY_SHEET_ID);
+    if (id && isRealGoogleSpreadsheetId(id)) {
+      return id;
     }
-    return id;
+    // Default to user's connected sheet ID
+    return TARGET_SPREADSHEET_ID;
   } catch {
-    return null;
+    return TARGET_SPREADSHEET_ID;
   }
 };
 
-export const setStoredSpreadsheetId = (type: 'inventory' | 'customers', id: string) => {
+export const setStoredSpreadsheetId = (type: 'inventory' | 'customers' | 'jobs' | 'all', id: string) => {
   try {
-    const key = type === 'inventory' ? STORAGE_KEYS.INVENTORY_SHEET_ID : STORAGE_KEYS.CUSTOMERS_SHEET_ID;
     const cleanId = extractSpreadsheetId(id);
-    if (cleanId && isRealGoogleSpreadsheetId(cleanId)) {
-      localStorage.setItem(key, cleanId);
+    const idToSave = cleanId && isRealGoogleSpreadsheetId(cleanId) ? cleanId : TARGET_SPREADSHEET_ID;
+    
+    if (type === 'all') {
+      localStorage.setItem(STORAGE_KEYS.PRIMARY_SHEET_ID, idToSave);
+      localStorage.setItem(STORAGE_KEYS.INVENTORY_SHEET_ID, idToSave);
+      localStorage.setItem(STORAGE_KEYS.CUSTOMERS_SHEET_ID, idToSave);
+      localStorage.setItem(STORAGE_KEYS.JOB_ORDERS_SHEET_ID, idToSave);
     } else {
-      localStorage.removeItem(key);
+      let key = STORAGE_KEYS.PRIMARY_SHEET_ID;
+      if (type === 'inventory') key = STORAGE_KEYS.INVENTORY_SHEET_ID;
+      else if (type === 'customers') key = STORAGE_KEYS.CUSTOMERS_SHEET_ID;
+      else if (type === 'jobs') key = STORAGE_KEYS.JOB_ORDERS_SHEET_ID;
+      localStorage.setItem(key, idToSave);
+      // also ensure primary is set
+      if (!localStorage.getItem(STORAGE_KEYS.PRIMARY_SHEET_ID)) {
+        localStorage.setItem(STORAGE_KEYS.PRIMARY_SHEET_ID, idToSave);
+      }
     }
   } catch (e) {
     console.warn('Could not store spreadsheet id', e);
   }
 };
 
-export const clearStoredSpreadsheetId = (type: 'inventory' | 'customers') => {
+export const clearStoredSpreadsheetId = (type: 'inventory' | 'customers' | 'jobs' | 'all') => {
   try {
-    const key = type === 'inventory' ? STORAGE_KEYS.INVENTORY_SHEET_ID : STORAGE_KEYS.CUSTOMERS_SHEET_ID;
-    localStorage.removeItem(key);
+    if (type === 'all') {
+      localStorage.removeItem(STORAGE_KEYS.PRIMARY_SHEET_ID);
+      localStorage.removeItem(STORAGE_KEYS.INVENTORY_SHEET_ID);
+      localStorage.removeItem(STORAGE_KEYS.CUSTOMERS_SHEET_ID);
+      localStorage.removeItem(STORAGE_KEYS.JOB_ORDERS_SHEET_ID);
+    } else {
+      let key = STORAGE_KEYS.PRIMARY_SHEET_ID;
+      if (type === 'inventory') key = STORAGE_KEYS.INVENTORY_SHEET_ID;
+      else if (type === 'customers') key = STORAGE_KEYS.CUSTOMERS_SHEET_ID;
+      else if (type === 'jobs') key = STORAGE_KEYS.JOB_ORDERS_SHEET_ID;
+      localStorage.removeItem(key);
+    }
   } catch (e) {
     console.warn('Could not remove spreadsheet id', e);
   }
@@ -765,6 +796,363 @@ export const syncCustomersToGoogleSheet = async (
   }
 
   return true;
+};
+
+/**
+ * 4.1 REAL-TIME SYNC JOB ORDERS TO SPREADSHEET (ใบสั่งซ่อมและสถานะงาน)
+ */
+export const syncJobOrdersToGoogleSheet = async (
+  spreadsheetId: string,
+  jobs: JobOrder[]
+): Promise<boolean> => {
+  let token = getStoredGoogleToken();
+  if (!token) {
+    token = await requestGoogleOAuthToken();
+  }
+
+  const targetSheetTitle = await resolveSheetRange(token, spreadsheetId, 'ใบสั่งซ่อมและสถานะ');
+
+  const headers = [
+    'เลขที่ใบสั่งซ่อม (Job No)',
+    'วันที่รับรถ',
+    'ทะเบียนรถยนต์',
+    'ยี่ห้อ / รุ่นรถ',
+    'ชื่อลูกค้า',
+    'เบอร์โทรลูกค้า',
+    'อาการเสียที่แจ้ง / งานที่ทำ',
+    'บันทึกช่างเทคนิค',
+    'ช่างผู้รับผิดชอบ',
+    'ช่องซ่อม (Bay)',
+    'สถานะงานซ่อม',
+    'ความเร่งด่วน',
+    'ค่าแรง (บาท)',
+    'ค่าอะไหล่รวม (บาท)',
+    'ส่วนลด (บาท)',
+    'ยอดรวมสุทธิ (บาท)',
+    'สถานะชำระเงิน',
+    'ช่องทางชำระ',
+    'ยอดมัดจำ (บาท)',
+    'กำหนดส่งมอบรถ',
+    'อัปเดตระบบล่าสุด',
+  ];
+
+  const getStatusText = (s: string) => {
+    switch (s) {
+      case 'pending': return '⏳ รอดำเนินการ';
+      case 'inspecting': return '🔍 กำลังตรวจเช็ค';
+      case 'waiting_parts': return '📦 รออะไหล่';
+      case 'in_progress': return '🔧 กำลังดำเนินการซ่อม';
+      case 'qc': return '🧪 ทดสอบ QC';
+      case 'completed': return '✅ ซ่อมเสร็จแล้ว (รอส่งมอบ)';
+      case 'delivered': return '🚗 ส่งมอบรถเรียบร้อย';
+      case 'cancelled': return '❌ ยกเลิก';
+      default: return s;
+    }
+  };
+
+  const getPriorityText = (p: string) => {
+    switch (p) {
+      case 'urgent': return '🔥 ด่วนพิเศษ';
+      case 'high': return '⚡ ด่วน';
+      case 'medium': return '🔹 ปานกลาง';
+      default: return '🟢 ปกติ';
+    }
+  };
+
+  const getPaymentStatusText = (ps: string) => {
+    switch (ps) {
+      case 'paid': return '✅ ชำระครบแล้ว';
+      case 'deposit': return '🟡 มัดจำบางส่วน';
+      case 'unpaid': return '🔴 ยังไม่ชำระ';
+      case 'refunded': return '⚪ คืนเงิน';
+      default: return ps;
+    }
+  };
+
+  const rows = jobs.map((j) => {
+    const partsTotal = (j.partsUsed || []).reduce((acc, p) => acc + (p.totalPrice ?? (p.unitPrice * p.quantity)), 0);
+    return [
+      j.jobNo,
+      j.receivedDate || j.createdAt.slice(0, 10),
+      j.licensePlate,
+      `${j.carBrand} ${j.carModel}`,
+      j.customerName,
+      j.customerPhone,
+      j.issueDescription || '-',
+      j.technicianNotes || '-',
+      j.mechanicName || 'ช่างไมค์',
+      j.bayNumber ? `ช่องที่ ${j.bayNumber}` : '-',
+      getStatusText(j.status),
+      getPriorityText(j.priority),
+      j.laborFee || 0,
+      partsTotal,
+      j.discount || 0,
+      j.totalAmount,
+      getPaymentStatusText(j.paymentStatus),
+      j.paymentMethod || 'PromptPay',
+      j.depositAmount || 0,
+      j.estimatedCompletionDate || '-',
+      new Date().toLocaleString('th-TH'),
+    ];
+  });
+
+  const range = encodeURIComponent(`'${targetSheetTitle}'!A1:U`);
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        values: [headers, ...rows],
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    if (res.status === 401) {
+      clearStoredGoogleToken();
+      throw new Error('Google Token หมดอายุ กรุณาเข้าสู่ระบบ Google ใหม่อีกครั้ง');
+    }
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(
+      errBody.error?.message || `การซิงค์ใบสั่งซ่อมล้มเหลว (${res.status}): ${res.statusText}`
+    );
+  }
+
+  return true;
+};
+
+/**
+ * 4.2 REAL-TIME FINANCIAL & GARAGE SUMMARY TO SPREADSHEET
+ */
+export const syncFinancialSummaryToGoogleSheet = async (
+  spreadsheetId: string,
+  jobs: JobOrder[],
+  parts: SparePart[]
+): Promise<boolean> => {
+  let token = getStoredGoogleToken();
+  if (!token) {
+    token = await requestGoogleOAuthToken();
+  }
+
+  const targetSheetTitle = await resolveSheetRange(token, spreadsheetId, 'สรุปภาพรวมและการเงิน');
+
+  const totalRevenue = jobs.reduce((acc, j) => acc + (j.totalAmount || 0), 0);
+  const paidRevenue = jobs
+    .filter((j) => j.paymentStatus === 'paid')
+    .reduce((acc, j) => acc + (j.totalAmount || 0), 0);
+  const unpaidRevenue = jobs
+    .filter((j) => j.paymentStatus === 'unpaid')
+    .reduce((acc, j) => acc + (j.totalAmount || 0), 0);
+  const depositRevenue = jobs
+    .filter((j) => j.paymentStatus === 'deposit')
+    .reduce((acc, j) => acc + (j.depositAmount || 0), 0);
+
+  const activeJobs = jobs.filter((j) => j.status === 'in_progress' || j.status === 'pending').length;
+  const completedJobs = jobs.filter((j) => j.status === 'completed' || j.status === 'delivered').length;
+
+  const totalInventoryValue = parts.reduce((acc, p) => acc + (p.stockQty * p.costPrice), 0);
+  const lowStockCount = parts.filter((p) => p.stockQty <= p.minStockQty).length;
+
+  const summaryData = [
+    ['📊 รายงานสรุปสถานะอู่สงกรานต์ (Real-time Dashboard Summary)', ''],
+    ['อัปเดตข้อมูลล่าสุดเมื่อ', new Date().toLocaleString('th-TH')],
+    ['รหัส Google Spreadsheet ID', spreadsheetId],
+    ['สถานะการเชื่อมต่อ', '🟢 เชื่อมต่อเรียลไทม์ (Live Connected)'],
+    ['', ''],
+    ['หมวดหมู่ตัวชี้วัด (KPIs)', 'ค่าปัจจุบัน (บาท / คัน / รายการ)'],
+    ['ยอดขาย / มูลค่างานซ่อมทั้งหมด (Total Revenue)', `฿${totalRevenue.toLocaleString()}`],
+    ['ยอดเงินที่เก็บแล้ว (Paid Revenue)', `฿${paidRevenue.toLocaleString()}`],
+    ['ยอดเงินมัดจำ (Deposit Collected)', `฿${depositRevenue.toLocaleString()}`],
+    ['ยอดค้างชำระ (Pending Payment)', `฿${unpaidRevenue.toLocaleString()}`],
+    ['จำนวนใบสั่งซ่อมทั้งหมด (Total Jobs)', `${jobs.length} ใบ`],
+    ['งานซ่อมที่กำลังดำเนินการ (Active Jobs)', `${activeJobs} คัน`],
+    ['งานซ่อมที่สำเร็จแล้ว (Completed / Delivered)', `${completedJobs} คัน`],
+    ['มูลค่าสต็อกอะไหล่รวมราคาทุน (Inventory Value)', `฿${totalInventoryValue.toLocaleString()}`],
+    ['จำนวนรายการอะไหล่ทั้งหมด (SKU)', `${parts.length} รายการ`],
+    ['อะไหล่ที่สต็อกต่ำกว่าเกณฑ์ / ต้องสั่งซื้อ (Low Stock)', `${lowStockCount} รายการ`],
+    ['', ''],
+    ['ช่างผู้รับผิดชอบหลัก & เบอร์ติดต่อ', 'ช่างไมค์ (สงกรานต์) โทร. 061-069-2036 | LINE: chaiwatmike'],
+  ];
+
+  const range = encodeURIComponent(`'${targetSheetTitle}'!A1:B18`);
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        values: summaryData,
+      }),
+    }
+  );
+
+  return res.ok;
+};
+
+/**
+ * 4.3 ALL-IN-ONE REAL-TIME SYNC TO GOOGLE SPREADSHEET
+ */
+export const syncAllToGoogleSheet = async (
+  spreadsheetId: string,
+  data: {
+    parts: SparePart[];
+    customers: Customer[];
+    jobOrders: JobOrder[];
+  }
+): Promise<{ success: boolean; syncedTabs: string[]; errors: string[] }> => {
+  const syncedTabs: string[] = [];
+  const errors: string[] = [];
+
+  const targetId = spreadsheetId || TARGET_SPREADSHEET_ID;
+
+  // 1. Inventory Tab
+  try {
+    if (data.parts && data.parts.length > 0) {
+      await syncInventoryToGoogleSheet(targetId, data.parts);
+      syncedTabs.push('คลังสต็อกอะไหล่');
+    }
+  } catch (err: any) {
+    errors.push(`สต็อกอะไหล่: ${err?.message || err}`);
+  }
+
+  // 2. Job Orders Tab
+  try {
+    if (data.jobOrders && data.jobOrders.length > 0) {
+      await syncJobOrdersToGoogleSheet(targetId, data.jobOrders);
+      syncedTabs.push('ใบสั่งซ่อมและสถานะ');
+    }
+  } catch (err: any) {
+    errors.push(`ใบสั่งซ่อม: ${err?.message || err}`);
+  }
+
+  // 3. Customers Tab
+  try {
+    if (data.customers && data.customers.length > 0) {
+      await syncCustomersToGoogleSheet(targetId, data.customers);
+      syncedTabs.push('ประวัติลูกค้าและรถยนต์');
+    }
+  } catch (err: any) {
+    errors.push(`ประวัติลูกค้า: ${err?.message || err}`);
+  }
+
+  // 4. Financial Summary Tab
+  try {
+    if (data.jobOrders && data.parts) {
+      await syncFinancialSummaryToGoogleSheet(targetId, data.jobOrders, data.parts);
+      syncedTabs.push('สรุปภาพรวมและการเงิน');
+    }
+  } catch (err: any) {
+    errors.push(`สรุปการเงิน: ${err?.message || err}`);
+  }
+
+  setStoredSpreadsheetId('all', targetId);
+
+  return {
+    success: syncedTabs.length > 0,
+    syncedTabs,
+    errors,
+  };
+};
+
+/**
+ * 4.4 READ DATA FROM GOOGLE SPREADSHEET (Two-way reading)
+ */
+export const readSheetValues = async (
+  spreadsheetId: string,
+  sheetTitle: string
+): Promise<any[][]> => {
+  let token = getStoredGoogleToken();
+  if (!token) {
+    token = await requestGoogleOAuthToken();
+  }
+
+  const range = encodeURIComponent(`'${sheetTitle}'!A1:Z1000`);
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  if (!res.ok) {
+    throw new Error(`อ่านข้อมูลชีตไม่สำเร็จ (${res.status}): ${res.statusText}`);
+  }
+
+  const data = await res.json();
+  return data.values || [];
+};
+
+/**
+ * 4.5 GENERATE GOOGLE APPS SCRIPT CODE FOR 2-WAY REAL-TIME WEBHOOK
+ */
+export const generateGoogleAppsScriptCode = (spreadsheetId: string = TARGET_SPREADSHEET_ID): string => {
+  return `/**
+ * =====================================================================
+ * Google Apps Script สำหรับอู่สงกรานต์ (ช่างไมค์) โทร. 061-069-2036
+ * เชื่อมต่อกับ Google Spreadsheet ID: ${spreadsheetId} แบบ Real-time
+ * =====================================================================
+ * วิธีติดตั้ง:
+ * 1. ใน Google Sheet (${spreadsheetId}) ไปที่เมนู "ส่วนขยาย" (Extensions) > "Apps Script"
+ * 2. ลบโค้ดเดิมแล้ววางโค้ดชุดนี้ลงไป
+ * 3. กด "บันทึก" (Ctrl+S หรือรูปแผ่นดิสก์)
+ * 4. คลิก "ทริกเกอร์" (Triggers - ไอคอนรูปนาฬิกาด้านซ้าย) > "เพิ่มทริกเกอร์" (Add Trigger)
+ *    - ฟังก์ชันที่จะทำงาน: onSpreadsheetEdit
+ *    - แหล่งที่มาของเหตุการณ์: จากสเปรดชีต
+ *    - ประเภทเหตุการณ์: เมื่อแก้ไข (On edit)
+ */
+
+function onSpreadsheetEdit(e) {
+  var sheet = e.source.getActiveSheet();
+  var sheetName = sheet.getName();
+  var editedRange = e.range;
+  var row = editedRange.getRow();
+  var col = editedRange.getColumn();
+  var newValue = e.value;
+  var oldValue = e.oldValue;
+
+  Logger.log('มีการแก้ไขชีต: ' + sheetName + ' แถว: ' + row + ' คอลัมน์: ' + col + ' ค่าใหม่: ' + newValue);
+
+  // บันทึกเวลาอัปเดตอัตโนมัติที่คอลัมน์สุดท้าย
+  if (row > 1) {
+    var lastCol = sheet.getLastColumn();
+    sheet.getRange(row, lastCol).setValue(Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm:ss"));
+  }
+}
+
+/**
+ * ฟังก์ชันสำหรับดึงข้อมูลสรุปแบบ JSON ผ่าน Web App API
+ */
+function doGet(e) {
+  var ss = SpreadsheetApp.openById('${spreadsheetId}');
+  var result = {
+    status: 'connected',
+    spreadsheetId: '${spreadsheetId}',
+    timestamp: new Date().toISOString(),
+    sheets: []
+  };
+
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    result.sheets.push({
+      name: sheets[i].getName(),
+      rows: sheets[i].getLastRow(),
+      cols: sheets[i].getLastColumn()
+    });
+  }
+
+  return ContentService.createTextOutput(JSON.stringify(result))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+`;
 };
 
 /**

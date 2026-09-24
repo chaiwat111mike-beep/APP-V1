@@ -10,6 +10,7 @@ import { CustomersView } from './components/CustomersView';
 import { ServiceBaysView } from './components/ServiceBaysView';
 import { BillingReportView } from './components/BillingReportView';
 import { SettingsView } from './components/SettingsView';
+import { RepairHistoryView } from './components/RepairHistoryView';
 import { JobOrderFormModal } from './components/JobOrderFormModal';
 import { JobOrderDetailModal } from './components/JobOrderDetailModal';
 import { PrintDocumentModal } from './components/PrintDocumentModal';
@@ -41,7 +42,7 @@ const GarageAppInner: React.FC = () => {
     isOpen: false,
   });
 
-  const { jobOrders } = useGarage();
+  const { jobOrders, spareParts } = useGarage();
 
   const handleSelectJob = (jobId: string) => {
     setSelectedJobId(jobId);
@@ -67,7 +68,7 @@ const GarageAppInner: React.FC = () => {
   };
 
   const activeJobCount = jobOrders.filter((j) => j.status !== 'delivered').length;
-  const lowStockCount = 2; // handled in context
+  const lowStockCount = spareParts.filter((p) => p.stockQty <= p.minStockQty).length;
 
   return (
     <div className="min-h-screen bg-[#0F1113] text-gray-100 flex flex-col font-sans selection:bg-orange-500 selection:text-white">
@@ -115,6 +116,15 @@ const GarageAppInner: React.FC = () => {
                 onSelectJob={handleSelectJob}
                 onOpenNewJobModal={handleOpenNewJob}
                 onPrintJob={handlePrintJob}
+                onNavigateToHistory={() => setCurrentTab('history')}
+              />
+            )}
+
+            {currentTab === 'history' && (
+              <RepairHistoryView
+                onSelectJob={handleSelectJob}
+                onPrintJob={handlePrintJob}
+                onOpenNewJobModal={handleOpenNewJob}
               />
             )}
 
@@ -170,6 +180,7 @@ const GarageAppInner: React.FC = () => {
           setSelectedJobId(null);
         }}
         onPrintJob={handlePrintJob}
+        onSwitchJob={(newId) => setSelectedJobId(newId)}
       />
 
       <PrintDocumentModal

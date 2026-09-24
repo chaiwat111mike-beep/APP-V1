@@ -63,8 +63,12 @@ export const ServiceBaysView: React.FC<ServiceBaysViewProps> = ({
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {serviceBays.map((bay) => {
-            const currentJob = jobOrders.find((j) => j.id === bay.currentJobId);
-            const isOccupied = bay.status === 'occupied' && currentJob;
+            const currentJob = jobOrders.find(
+              (j) =>
+                (bay.currentJobId && j.id === bay.currentJobId) ||
+                (j.bayNumber === bay.bayNumber && j.status !== 'delivered' && j.status !== 'completed')
+            );
+            const isOccupied = (bay.status === 'occupied' || !!currentJob) && bay.status !== 'maintenance' && !!currentJob;
 
             return (
               <div
@@ -161,22 +165,22 @@ export const ServiceBaysView: React.FC<ServiceBaysViewProps> = ({
         </div>
       </div>
 
-      {/* Mechanics / Staff Section */}
+      {/* Mechanics / Staff Section (3 Positions) */}
       <div className="bg-[#16191D] border border-[#2D3135] rounded-xl p-6 shadow-md space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Users className="w-5 h-5 text-orange-500" />
-              <span>ทีมช่างซ่อมและช่างเทคนิค ({mechanics.length} ท่าน)</span>
+              <span>ทีมช่างซ่อมและช่างเทคนิค (3 ตำแหน่ง)</span>
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              ความเชี่ยวชาญ ประสิทธิภาพงานซ่อม และสถานะการปฏิบัติงาน
+              โครงสร้างทีมช่างประจำ 3 ตำแหน่งหลัก สอดคล้องกับ 3 ช่องซ่อม (เครื่องยนต์ • ช่วงล่าง/เบรก • ระบบไฟฟ้า/แอร์)
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {mechanics.map((mech) => {
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {mechanics.slice(0, 3).map((mech, index) => {
             const currentMechJobs = jobOrders.filter(
               (j) => j.mechanicId === mech.id && j.status !== 'delivered' && j.status !== 'completed'
             );
@@ -184,31 +188,39 @@ export const ServiceBaysView: React.FC<ServiceBaysViewProps> = ({
             return (
               <div
                 key={mech.id}
-                className="p-4 bg-[#0F1113] border border-[#2D3135] rounded-lg space-y-3"
+                className="p-5 bg-[#0F1113] border border-[#2D3135] hover:border-orange-500/40 rounded-xl space-y-3.5 transition-all shadow-sm"
               >
                 <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400 flex items-center justify-center font-bold text-sm">
-                      {mech.name.slice(4, 5)}
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 flex items-center justify-center font-bold text-sm font-mono shrink-0 shadow-inner">
+                      #{index + 1}
                     </div>
                     <div>
-                      <h4 className="text-xs font-bold text-white line-clamp-1">{mech.name}</h4>
-                      <span className="text-[10px] text-orange-400 font-semibold uppercase">{mech.role}</span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 font-bold border border-orange-500/20">
+                          {mech.positionTitle || `ตำแหน่งที่ ${index + 1}`}
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-bold text-white mt-1">{mech.name}</h4>
+                      <p className="text-[11px] text-gray-400 font-mono mt-0.5 flex items-center gap-1">
+                        <Phone className="w-3 h-3 text-orange-400" />
+                        <span>{mech.phone}</span>
+                      </p>
                     </div>
                   </div>
 
                   <select
                     value={mech.status}
                     onChange={(e) => updateMechanicStatus(mech.id, e.target.value as any)}
-                    className="text-[10px] bg-[#16191D] border border-[#2D3135] rounded px-2 py-1 text-gray-200 focus:outline-none"
+                    className="text-[11px] bg-[#16191D] border border-[#2D3135] rounded-lg px-2.5 py-1 text-gray-200 focus:outline-none focus:border-orange-500"
                   >
-                    <option value="available">ว่าง</option>
+                    <option value="available">ว่าง (พร้อมรับ)</option>
                     <option value="busy">กำลังซ่อม</option>
                     <option value="leave">ลา</option>
                   </select>
                 </div>
 
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1.5 pt-1">
                   {mech.specialties.map((spec, i) => (
                     <span
                       key={i}
@@ -219,10 +231,10 @@ export const ServiceBaysView: React.FC<ServiceBaysViewProps> = ({
                   ))}
                 </div>
 
-                <div className="pt-2 border-t border-[#2D3135] flex items-center justify-between text-xs text-gray-400">
+                <div className="pt-2.5 border-t border-[#2D3135] flex items-center justify-between text-xs text-gray-400">
                   <span>งานที่กำลังทำ: <strong className="text-orange-400 font-mono">{currentMechJobs.length} คัน</strong></span>
                   <span className="flex items-center gap-1 text-orange-400 font-semibold text-[11px]">
-                    <Star className="w-3 h-3 fill-orange-500 text-orange-500" />
+                    <Star className="w-3.5 h-3.5 fill-orange-500 text-orange-500" />
                     <span className="font-mono">{mech.rating}</span>
                   </span>
                 </div>

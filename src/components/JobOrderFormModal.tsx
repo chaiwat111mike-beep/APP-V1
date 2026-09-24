@@ -23,7 +23,8 @@ import {
   TrendingUp,
   Package,
   Layers,
-  ChevronDown
+  ChevronDown,
+  History
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { JobOrder, JobPriority, JobStatus, JobPartItem, Customer, CustomerVehicle } from '../types';
@@ -33,7 +34,8 @@ import {
   getDurationDisplay,
   getQuickDeliveryPreset,
   toDateTimeLocalString,
-  formatThaiDateTime
+  formatThaiDateTime,
+  formatThaiDate
 } from '../utils/jobCalculator';
 import { SparePartSearchSelect } from './SparePartSearchSelect';
 
@@ -122,6 +124,15 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
   const [valuableItemsChecked, setValuableItemsChecked] = useState<boolean>(true);
   const [spareTirePresent, setSpareTirePresent] = useState<boolean>(true);
   const [matchedCustomerHint, setMatchedCustomerHint] = useState<string | null>(null);
+
+  // Past repairs for this license plate lookup
+  const [showPastRepairsPreview, setShowPastRepairsPreview] = useState<boolean>(false);
+  const pastRepairsForThisPlate = useMemo(() => {
+    if (!licensePlate || licensePlate.trim().length < 2) return [];
+    return jobOrders
+      .filter((j) => j.licensePlate.trim().toLowerCase() === licensePlate.trim().toLowerCase())
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [jobOrders, licensePlate]);
 
   // 6. Expense & Financial Calculator State
   const [partsList, setPartsList] = useState<JobPartItem[]>([]);
@@ -722,6 +733,70 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
             </div>
 
           </div>
+
+          {/* Past Repairs Notice for this vehicle (เปิดดูประวัติย้อนหลังของรถคันนี้ได้ทันที) */}
+          {pastRepairsForThisPlate.length > 0 && (
+            <div className="p-3.5 bg-blue-500/10 border border-blue-500/30 rounded-xl text-xs space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-blue-400 font-bold">
+                  <History className="w-4 h-4 text-blue-400 shrink-0" />
+                  <span>
+                    พบประวัติการซ่อมของรถทะเบียน {licensePlate} ทั้งหมด {pastRepairsForThisPlate.length} ครั้งในระบบ
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPastRepairsPreview(!showPastRepairsPreview)}
+                  className="px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white font-semibold text-xs border border-blue-500/30 transition-all"
+                >
+                  {showPastRepairsPreview ? 'ย่อประวัติ' : 'ดูประวัติการซ่อมย้อนหลัง'}
+                </button>
+              </div>
+
+              {showPastRepairsPreview && (
+                <div className="space-y-2 pt-2 border-t border-blue-500/20 max-h-56 overflow-y-auto">
+                  <p className="text-[11px] text-gray-400">
+                    รายการซ่อมเดิมที่เคยบันทึกไว้ในอู่ (ช่วยให้ช่างตรวจสอบอะไหล่และระยะไมล์เดิมได้ทันที):
+                  </p>
+                  {pastRepairsForThisPlate.map((p) => (
+                    <div
+                      key={p.id}
+                      className="p-2.5 bg-[#16191D] rounded-lg border border-[#2D3135] text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-blue-400 font-bold bg-[#0F1113] px-1.5 py-0.5 rounded border border-[#2D3135]">
+                            {p.jobNo}
+                          </span>
+                          <span className="text-gray-400 text-[11px]">
+                            {p.receivedDate ? formatThaiDate(p.receivedDate) : formatThaiDate(p.createdAt)}
+                          </span>
+                          <span className="text-amber-400 text-[11px] font-mono">
+                            ไมล์ {(p.mileage || 0).toLocaleString()} กม.
+                          </span>
+                        </div>
+                        <p className="text-gray-200 font-medium">{p.issueDescription}</p>
+                        {p.partsUsed.length > 0 && (
+                          <p className="text-[11px] text-gray-400">
+                            อะไหล่: {p.partsUsed.map((pt) => `${pt.partName} x${pt.quantity}`).join(', ')}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="text-left sm:text-right shrink-0">
+                        <span className="font-mono font-bold text-emerald-400 block text-xs">
+                          ฿{(p.totalAmount || 0).toLocaleString()}
+                        </span>
+                        <span className="text-[10px] text-gray-400">
+                          {p.status === 'delivered' ? 'ส่งมอบแล้ว' : p.status === 'completed' ? 'ซ่อมเสร็จ' : 'กำลังซ่อม'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Section 2: Symptoms & Workshop Bay Assignment */}
           <div className="bg-[#0F1113] border border-[#2D3135] rounded-xl p-4 space-y-3">

@@ -16,7 +16,8 @@ import {
   MessageSquare,
   ExternalLink,
   Menu,
-  QrCode
+  QrCode,
+  History
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { useAuth } from '../context/AuthContext';
@@ -71,12 +72,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const filteredJobs = searchQuery.trim()
     ? jobOrders.filter(
-        (j) =>
-          j.licensePlate.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          j.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          j.customerPhone.includes(searchQuery) ||
-          j.jobNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          j.carBrand.toLowerCase().includes(searchQuery.toLowerCase())
+        (j) => {
+          const q = searchQuery.toLowerCase();
+          return (
+            (j.licensePlate || '').toLowerCase().includes(q) ||
+            (j.customerName || '').toLowerCase().includes(q) ||
+            (j.customerPhone || '').includes(searchQuery) ||
+            (j.jobNo || '').toLowerCase().includes(q) ||
+            (j.carBrand || '').toLowerCase().includes(q) ||
+            (j.carModel || '').toLowerCase().includes(q)
+          );
+        }
       )
     : [];
 
@@ -196,12 +202,41 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </div>
                     ))
                   )}
+
+                  {/* Open Repair History Footer */}
+                  <div
+                    onClick={() => {
+                      if (setActiveTab) setActiveTab('history');
+                      setShowSearchResults(false);
+                    }}
+                    className="p-2.5 bg-[#0F1113] hover:bg-[#1C2025] text-center text-xs text-blue-400 font-bold border-t border-[#2D3135] cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <History className="w-3.5 h-3.5" />
+                    <span>เปิดค้นหาในคลังประวัติใบซ่อมย้อนหลังทั้งหมด</span>
+                  </div>
                 </div>
               )}
             </div>
 
             {/* Right Action Items */}
             <div className="flex items-center gap-2 sm:gap-3">
+              
+              {/* Quick History Archive Button */}
+              {setActiveTab && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('history')}
+                  title="เปิดดูคลังประวัติใบซ่อมย้อนหลัง"
+                  className={`hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all text-xs font-bold active:scale-95 ${
+                    activeTab === 'history'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-blue-600/15 border border-blue-500/30 hover:bg-blue-600/25 text-blue-400 hover:text-blue-300'
+                  }`}
+                >
+                  <History className="w-3.5 h-3.5 text-blue-400" />
+                  <span>ประวัติใบซ่อม</span>
+                </button>
+              )}
               
               {/* LINE ID Direct Link */}
               <a

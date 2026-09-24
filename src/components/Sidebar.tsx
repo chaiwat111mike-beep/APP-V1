@@ -13,7 +13,8 @@ import {
   Calendar,
   Sparkles,
   Flame,
-  X
+  X,
+  History
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { GarageLogo } from './GarageLogo';
@@ -37,10 +38,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { jobOrders, spareParts, serviceBays } = useGarage();
 
+  const isBayOccupied = (b: (typeof serviceBays)[0]) =>
+    (b.status === 'occupied' ||
+      jobOrders.some(
+        (j) => j.bayNumber === b.bayNumber && j.status !== 'delivered' && j.status !== 'completed'
+      )) &&
+    b.status !== 'maintenance';
+
   const activeJobs = jobOrders.filter((j) => j.status !== 'delivered' && j.status !== 'completed').length;
   const readyPickupJobs = jobOrders.filter((j) => j.status === 'completed').length;
   const lowStockCount = spareParts.filter((p) => p.stockQty <= p.minStockQty).length;
-  const occupiedBays = serviceBays.filter((b) => b.status === 'occupied').length;
+  const occupiedBays = serviceBays.filter(isBayOccupied).length;
 
   const navItems = [
     {
@@ -56,6 +64,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: ClipboardList,
       badge: activeJobs > 0 ? `${activeJobs}` : undefined,
       badgeColor: 'bg-amber-500/10 text-amber-400 border border-amber-500/20',
+    },
+    {
+      id: 'history',
+      label: 'ประวัติใบซ่อมย้อนหลัง',
+      icon: History,
+      badge: jobOrders.length > 0 ? `${jobOrders.length}` : undefined,
+      badgeColor: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
     },
     {
       id: 'inventory',
@@ -133,21 +148,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           <div className="grid grid-cols-3 gap-1.5">
-            {serviceBays.map((bay) => (
-              <div
-                key={bay.id}
-                title={`ช่องซ่อมที่ ${bay.bayNumber}: ${bay.name} (${bay.status === 'occupied' ? 'กำลังซ่อม' : 'ว่าง'})`}
-                className={`h-7 rounded-md flex items-center justify-center font-bold text-xs transition-all font-mono ${
-                  bay.status === 'occupied'
-                    ? 'bg-orange-500 text-white shadow-sm shadow-orange-500/30'
-                    : bay.status === 'maintenance'
-                    ? 'bg-[#1C2025] text-gray-500 border border-[#2D3135]'
-                    : 'bg-[#16191D] border border-green-500/30 text-green-400'
-                }`}
-              >
-                {bay.bayNumber}
-              </div>
-            ))}
+            {serviceBays.map((bay) => {
+              const occupied = isBayOccupied(bay);
+              return (
+                <div
+                  key={bay.id}
+                  title={`ช่องซ่อมที่ ${bay.bayNumber}: ${bay.name} (${occupied ? 'กำลังซ่อม' : bay.status === 'maintenance' ? 'ปิดปรับปรุง' : 'ว่าง'})`}
+                  className={`h-7 rounded-md flex items-center justify-center font-bold text-xs transition-all font-mono ${
+                    occupied
+                      ? 'bg-orange-500 text-white shadow-sm shadow-orange-500/30'
+                      : bay.status === 'maintenance'
+                      ? 'bg-[#1C2025] text-gray-500 border border-[#2D3135]'
+                      : 'bg-[#16191D] border border-green-500/30 text-green-400'
+                  }`}
+                >
+                  {bay.bayNumber}
+                </div>
+              );
+            })}
           </div>
 
           {readyPickupJobs > 0 && (

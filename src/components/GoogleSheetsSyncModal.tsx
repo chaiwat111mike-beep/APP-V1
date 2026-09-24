@@ -21,6 +21,9 @@ import {
   Check,
   Activity,
   Sparkles,
+  Code,
+  Wrench,
+  Radio,
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import {
@@ -28,6 +31,12 @@ import {
   createCustomersSpreadsheet,
   syncInventoryToGoogleSheet,
   syncCustomersToGoogleSheet,
+  syncJobOrdersToGoogleSheet,
+  syncFinancialSummaryToGoogleSheet,
+  syncAllToGoogleSheet,
+  generateGoogleAppsScriptCode,
+  TARGET_SPREADSHEET_ID,
+  DEFAULT_SPREADSHEET_URL,
   getStoredSpreadsheetId,
   setStoredSpreadsheetId,
   clearStoredSpreadsheetId,
@@ -46,7 +55,7 @@ import {
 interface GoogleSheetsSyncModalProps {
   isOpen: boolean;
   onClose: () => void;
-  targetTab?: 'inventory' | 'customers' | 'all';
+  targetTab?: 'inventory' | 'customers' | 'jobs' | 'all';
 }
 
 export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
@@ -54,14 +63,24 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
   onClose,
   targetTab = 'all',
 }) => {
-  const { spareParts, customers, garageProfile, updateGarageProfile } = useGarage();
+  const {
+    spareParts,
+    customers,
+    jobOrders,
+    garageProfile,
+    updateGarageProfile,
+    googleSheetsSyncStatus,
+    setGoogleSheetId,
+    toggleGoogleSheetAutoSync,
+  } = useGarage();
 
-  const [activeSubTab, setActiveSubTab] = useState<'inventory' | 'customers'>(
-    targetTab === 'customers' ? 'customers' : 'inventory'
+  const [activeSubTab, setActiveSubTab] = useState<'inventory' | 'jobs' | 'customers' | 'script'>(
+    targetTab === 'customers' ? 'customers' : targetTab === 'jobs' ? 'jobs' : 'inventory'
   );
 
-  const [inventorySheetId, setInventorySheetId] = useState<string | null>(null);
-  const [customersSheetId, setCustomersSheetId] = useState<string | null>(null);
+  const [inventorySheetId, setInventorySheetId] = useState<string | null>(TARGET_SPREADSHEET_ID);
+  const [customersSheetId, setCustomersSheetId] = useState<string | null>(TARGET_SPREADSHEET_ID);
+  const [jobsSheetId, setJobsSheetId] = useState<string | null>(TARGET_SPREADSHEET_ID);
 
   const [manualSheetInput, setManualSheetInput] = useState<string>('');
   const [isEditingLink, setIsEditingLink] = useState(false);
@@ -69,6 +88,7 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
   const [isCreatingViaApi, setIsCreatingViaApi] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [copiedScript, setCopiedScript] = useState(false);
   const [testResult, setTestResult] = useState<{
     connected: boolean;
     authenticated: boolean;
@@ -88,10 +108,12 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
   // Synchronize state when opened
   useEffect(() => {
     if (isOpen) {
-      const invId = getStoredSpreadsheetId('inventory');
-      const custId = getStoredSpreadsheetId('customers');
+      const primaryId = getStoredSpreadsheetId('all') || TARGET_SPREADSHEET_ID;
+      const invId = getStoredSpreadsheetId('inventory') || primaryId;
+      const custId = getStoredSpreadsheetId('customers') || primaryId;
       setInventorySheetId(invId);
       setCustomersSheetId(custId);
+      setJobsSheetId(primaryId);
       setManualSheetInput('');
       setIsEditingLink(false);
       setErrorMessage(null);
@@ -104,14 +126,20 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
       // Auto test connection
       const token = getStoredGoogleToken();
       if (token) {
-        handleTestConnection(activeSubTab === 'inventory' ? invId : custId);
+        handleTestConnection(primaryId);
       }
     }
   }, [isOpen, activeSubTab]);
 
   if (!isOpen) return null;
 
-  const currentSheetId = activeSubTab === 'inventory' ? inventorySheetId : customersSheetId;
+  const currentSheetId =
+    activeSubTab === 'inventory'
+      ? inventorySheetId || TARGET_SPREADSHEET_ID
+      : activeSubTab === 'customers'
+      ? customersSheetId || TARGET_SPREADSHEET_ID
+      : jobsSheetId || TARGET_SPREADSHEET_ID;
+
   const isSheetValid = isRealGoogleSpreadsheetId(currentSheetId);
   const currentSheetUrl = isSheetValid && currentSheetId ? getSpreadsheetUrl(currentSheetId) : null;
   const hasGoogleToken = !!getStoredGoogleToken();
@@ -180,8 +208,54 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     ]);
   });
 
-  const activeHeaders = activeSubTab === 'inventory' ? inventoryHeaders : customerHeaders;
-  const activeRows = activeSubTab === 'inventory' ? inventoryRows : customerRows;
+  // Prepare structured headers and rows for job orders
+  const jobHeaders = [
+    'เลขที่ใบสั่งซ่อม',
+    'วันที่รับรถ',
+    'ทะเบียนรถ',
+    'ยี่ห้อ / รุ่นรถ',
+    'ชื่อลูกค้า',
+    'เบอร์โทรศัพท์',
+    'อาการเสียที่แจ้ง',
+    'สถานะงานซ่อม',
+    'ความเร่งด่วน',
+    'ช่างผู้รับผิดชอบ',
+    'ช่องซ่อม',
+    'ยอดรวมสุทธิ (บาท)',
+    'สถานะชำระเงิน',
+    'กำหนดส่งมอบรถ',
+  ];
+
+  const jobRows = jobOrders.map((j) => [
+    j.jobNo,
+    j.receivedDate || j.createdAt.slice(0, 10),
+    j.licensePlate,
+    `${j.carBrand} ${j.carModel}`,
+    j.customerName,
+    j.customerPhone,
+    j.issueDescription || '-',
+    j.status,
+    j.priority,
+    j.mechanicName || 'ช่างไมค์',
+    j.bayNumber ? `ช่อง ${j.bayNumber}` : '-',
+    j.totalAmount,
+    j.paymentStatus,
+    j.estimatedCompletionDate || '-',
+  ]);
+
+  const activeHeaders =
+    activeSubTab === 'inventory'
+      ? inventoryHeaders
+      : activeSubTab === 'jobs'
+      ? jobHeaders
+      : customerHeaders;
+
+  const activeRows =
+    activeSubTab === 'inventory'
+      ? inventoryRows
+      : activeSubTab === 'jobs'
+      ? jobRows
+      : customerRows;
 
   // Filter rows for interactive in-app preview table
   const filteredRows = activeRows.filter((row) =>
@@ -334,7 +408,8 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
 
   // 8. Action: Push Sync to Live Google Sheets
   const handleSyncNow = async () => {
-    if (!currentSheetId || !isSheetValid) {
+    const targetId = currentSheetId || TARGET_SPREADSHEET_ID;
+    if (!targetId || !isRealGoogleSpreadsheetId(targetId)) {
       setErrorMessage('ยังไม่ได้เชื่อมโยง Google Sheets! กรุณาสร้างชีตหรือระบุลิงก์ก่อนซิงค์');
       setTimeout(() => setErrorMessage(null), 5000);
       return;
@@ -344,14 +419,16 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     setErrorMessage(null);
     try {
       if (activeSubTab === 'inventory') {
-        await syncInventoryToGoogleSheet(currentSheetId, spareParts);
-      } else {
-        await syncCustomersToGoogleSheet(currentSheetId, customers);
+        await syncInventoryToGoogleSheet(targetId, spareParts);
+      } else if (activeSubTab === 'jobs') {
+        await syncJobOrdersToGoogleSheet(targetId, jobOrders);
+      } else if (activeSubTab === 'customers') {
+        await syncCustomersToGoogleSheet(targetId, customers);
       }
       setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
       setSuccessMessage('ซิงค์และบันทึกข้อมูลลงใน Google Sheets สำเร็จเรียบร้อยแล้ว!');
       setTimeout(() => setSuccessMessage(null), 4000);
-      handleTestConnection(currentSheetId);
+      handleTestConnection(targetId);
     } catch (err: any) {
       console.error(err);
       setErrorMessage(`เกิดข้อผิดพลาดในการซิงค์: ${err.message || 'กรุณาลองใหม่อีกครั้ง'}`);
@@ -360,9 +437,48 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     }
   };
 
+  // 9. Action: Sync All Tabs at once
+  const handleSyncAllTabs = async () => {
+    const targetId = currentSheetId || TARGET_SPREADSHEET_ID;
+    setIsSyncing(true);
+    setErrorMessage(null);
+    try {
+      const res = await syncAllToGoogleSheet(targetId, {
+        parts: spareParts,
+        customers: customers,
+        jobOrders: jobOrders,
+      });
+      setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
+      if (res.success) {
+        setSuccessMessage(`ซิงค์ข้อมูลเรียลไทม์ครบทั้ง 4 แท็บสำเร็จ! (${res.syncedTabs.join(', ')})`);
+      } else {
+        setErrorMessage(`ข้อผิดพลาดบางส่วน: ${res.errors.join('; ')}`);
+      }
+      setTimeout(() => setSuccessMessage(null), 6000);
+      handleTestConnection(targetId);
+    } catch (err: any) {
+      setErrorMessage(`เกิดข้อผิดพลาดในการซิงค์รวม: ${err.message || err}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleApplyPresetSheetId = () => {
+    setInventorySheetId(TARGET_SPREADSHEET_ID);
+    setCustomersSheetId(TARGET_SPREADSHEET_ID);
+    setJobsSheetId(TARGET_SPREADSHEET_ID);
+    setStoredSpreadsheetId('all', TARGET_SPREADSHEET_ID);
+    setStoredSpreadsheetId('inventory', TARGET_SPREADSHEET_ID);
+    setStoredSpreadsheetId('customers', TARGET_SPREADSHEET_ID);
+    setGoogleSheetId(TARGET_SPREADSHEET_ID);
+    setSuccessMessage(`กำหนดเป้าหมายเชื่อมโยง Google Sheet ID: ${TARGET_SPREADSHEET_ID} เรียบร้อยแล้ว!`);
+    setTimeout(() => setSuccessMessage(null), 4000);
+    handleTestConnection(TARGET_SPREADSHEET_ID);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm overflow-y-auto animate-in fade-in">
-      <div className="bg-[#16191D] border border-[#2D3135] rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden my-4">
+      <div className="bg-[#16191D] border border-[#2D3135] rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden my-4">
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 bg-gradient-to-r from-[#1A1D21] to-[#121417] border-b border-[#2D3135]">
           <div className="flex items-center gap-3">
@@ -375,9 +491,12 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
                 <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#0F9D58]/20 text-[#0F9D58] border border-[#0F9D58]/30">
                   REAL-TIME SYNC
                 </span>
+                <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                  ID: 1XIH-RiKcciGRgWwNgQQ7ECsqnmMOX5pZNEAheJrtrYA
+                </span>
               </h2>
               <p className="text-xs text-gray-400">
-                ระบบจัดการสต็อกอะไหล่และข้อมูลลูกค้า อู่สงกรานต์ (ช่างไมค์ 061-069-2036)
+                ระบบจัดการสต็อกอะไหล่ ใบสั่งซ่อม และข้อมูลลูกค้า อู่สงกรานต์ (ช่างไมค์ 061-069-2036)
               </p>
             </div>
           </div>
@@ -388,6 +507,44 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
           >
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* Global Live Sync Status Banner */}
+        <div className="bg-[#0F1113] border-b border-[#2D3135] p-3 sm:px-6 flex items-center justify-between flex-wrap gap-2 text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
+            <span className="text-gray-300 font-medium">สถานะซิงค์เรียลไทม์:</span>
+            <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold">
+              {googleSheetsSyncStatus.autoSync ? '🟢 Auto-Sync เปิดทำงานอยู่' : '⚪ ปิด Auto-Sync'}
+            </span>
+            <span className="text-gray-500">|</span>
+            <span className="text-gray-400">
+              ชีตเป้าหมาย:{' '}
+              <strong className="text-orange-400 font-mono">
+                {googleSheetsSyncStatus.spreadsheetId.slice(0, 10)}...{googleSheetsSyncStatus.spreadsheetId.slice(-6)}
+              </strong>
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => toggleGoogleSheetAutoSync()}
+              className="px-2.5 py-1 rounded-lg bg-[#16191D] border border-[#2D3135] hover:border-gray-500 text-gray-300 text-[11px] font-medium transition-colors"
+            >
+              {googleSheetsSyncStatus.autoSync ? 'ปิด Auto-Sync' : 'เปิด Auto-Sync'}
+            </button>
+
+            <button
+              type="button"
+              disabled={isSyncing}
+              onClick={handleSyncAllTabs}
+              className="px-3 py-1 rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-bold text-[11px] flex items-center gap-1.5 shadow transition-all active:scale-95 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>ซิงค์ทุกแท็บเดี๋ยวนี้ (Sync All)</span>
+            </button>
+          </div>
         </div>
 
         {/* Tab Switcher */}
@@ -404,7 +561,22 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
             }`}
           >
             <Database className="w-4 h-4" />
-            <span>1. สต็อกอะไหล่ ({spareParts.length} รายการ)</span>
+            <span>1. สต็อกอะไหล่ ({spareParts.length})</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveSubTab('jobs');
+              setShowDataTable(false);
+            }}
+            className={`pb-3 px-3 sm:px-4 text-xs font-bold transition-all border-b-2 flex items-center gap-2 whitespace-nowrap ${
+              activeSubTab === 'jobs'
+                ? 'border-orange-500 text-orange-400'
+                : 'border-transparent text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <Wrench className="w-4 h-4" />
+            <span>2. ใบสั่งซ่อมและสถานะ ({jobOrders.length})</span>
           </button>
 
           <button
@@ -419,7 +591,22 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
             }`}
           >
             <Zap className="w-4 h-4" />
-            <span>2. ข้อมูลลูกค้า & รถยนต์ ({customers.length} ราย)</span>
+            <span>3. ลูกค้า & รถยนต์ ({customers.length})</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveSubTab('script');
+              setShowDataTable(false);
+            }}
+            className={`pb-3 px-3 sm:px-4 text-xs font-bold transition-all border-b-2 flex items-center gap-2 whitespace-nowrap ${
+              activeSubTab === 'script'
+                ? 'border-orange-500 text-orange-400'
+                : 'border-transparent text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <Code className="w-4 h-4" />
+            <span>4. โค้ด Apps Script (เชื่อมต่อเรียลไทม์)</span>
           </button>
         </div>
 
@@ -514,6 +701,52 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
           </div>
 
           {/* Current Connected Sheet Card */}
+          {activeSubTab === 'script' ? (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-[#0F1113] border border-[#2D3135] space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <h3 className="font-bold text-gray-200 text-sm flex items-center gap-2">
+                      <Code className="w-4 h-4 text-orange-400" />
+                      <span>Google Apps Script สำหรับเชื่อมต่อสองทางแบบ Real-time</span>
+                    </h3>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      สคริปต์นี้จะตรวจจับการแก้ไขใน Google Sheet ID:{' '}
+                      <span className="text-orange-400 font-mono font-bold">{TARGET_SPREADSHEET_ID}</span>{' '}
+                      ทันที
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(generateGoogleAppsScriptCode(TARGET_SPREADSHEET_ID));
+                      setCopiedScript(true);
+                      setTimeout(() => setCopiedScript(false), 3000);
+                    }}
+                    className="px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow text-xs"
+                  >
+                    {copiedScript ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    <span>{copiedScript ? 'คัดลอกโค้ดแล้ว!' : 'คัดลอกโค้ด Apps Script'}</span>
+                  </button>
+                </div>
+
+                <div className="bg-[#0A0C0E] border border-[#2D3135] rounded-xl p-3.5 overflow-x-auto font-mono text-[11px] text-emerald-400 max-h-72">
+                  <pre>{generateGoogleAppsScriptCode(TARGET_SPREADSHEET_ID)}</pre>
+                </div>
+
+                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl space-y-1.5 text-xs text-blue-200">
+                  <p className="font-bold text-blue-300">📌 วิธีติดตั้งสคริปต์ใน Google Sheets (ไม่เกิน 1 นาที):</p>
+                  <ol className="list-decimal list-inside space-y-1 text-gray-300 text-[11px]">
+                    <li>เปิด Google Sheet <strong className="text-white font-mono">{TARGET_SPREADSHEET_ID}</strong></li>
+                    <li>ไปที่เมนูด้านบน: <span className="text-orange-300">ส่วนขยาย (Extensions) &gt; Apps Script</span></li>
+                    <li>ลบโค้ดเริ่มต้น แล้ววางโค้ดที่คัดลอกจากปุ่มด้านบนลงไป</li>
+                    <li>กดไอคอน <strong className="text-white">บันทึก (Save)</strong> (รูปแผ่นดิสก์ หรือ Ctrl+S)</li>
+                    <li>คลิกเมนู <strong className="text-white">ทริกเกอร์ (Triggers)</strong> รูปนาฬิกาด้านซ้าย &gt; เพิ่มทริกเกอร์: ฟังก์ชัน <span className="text-orange-300">onSpreadsheetEdit</span>, แหล่งที่มา: <span className="text-orange-300">จากสเปรดชีต</span>, เหตุการณ์: <span className="text-orange-300">เมื่อแก้ไข (On edit)</span></li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className="p-4 sm:p-5 rounded-xl bg-[#0F1113] border border-[#2D3135] space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2.5">
@@ -525,6 +758,8 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
                 <span className="font-bold text-gray-200 text-sm">
                   {activeSubTab === 'inventory'
                     ? 'ตารางสต็อกอะไหล่ (Inventory Sheet)'
+                    : activeSubTab === 'jobs'
+                    ? 'ตารางใบสั่งซ่อมและสถานะงาน (Job Orders Sheet)'
                     : 'ตารางข้อมูลลูกค้า & รถยนต์ (CRM Sheet)'}
                 </span>
                 {isSheetValid ? (
@@ -674,8 +909,11 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
               </div>
             )}
           </div>
+          )}
 
-          {/* Quick Data Operations: Copy, Download, Sync */}
+          {activeSubTab !== 'script' && (
+            <>
+              {/* Quick Data Operations: Copy, Download, Sync */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {/* Tool 1: Copy All Data to Clipboard */}
             <div className="p-3.5 rounded-xl bg-[#0F1113] border border-[#2D3135] flex flex-col justify-between space-y-3">
@@ -811,22 +1049,23 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
               </div>
             )}
           </div>
+          </>
+          )}
 
           {/* Quick Guide */}
           <div className="p-3.5 rounded-xl bg-[#0F9D58]/10 border border-[#0F9D58]/25 text-[11px] text-gray-300 space-y-1">
             <div className="flex items-center gap-2 font-bold text-[#0F9D58]">
               <ShieldCheck className="w-4 h-4" />
-              <span>คำแนะนำการใช้งาน Google Sheets:</span>
+              <span>คำแนะนำการเชื่อมต่อ Google Sheets แบบ Real-time:</span>
             </div>
             <p>
-              1. คลิกปุ่ม <strong>&ldquo;สร้าง Google Sheet ใหม่อัตโนมัติ&rdquo;</strong>{' '}
-              ระบบจะสร้างไฟล์และนำเข้าข้อมูลพร้อมจัดคอลัมน์ภาษาไทยให้เสร็จสรรพ
+              1. ระบบผูกเชื่อมโยงเป้าหมายกับ <strong>Google Sheet ID: 1XIH-RiKcciGRgWwNgQQ7ECsqnmMOX5pZNEAheJrtrYA</strong> เรียบร้อยแล้ว
             </p>
             <p>
-              2. หากต้องการนำเข้าด้วยตนเอง สามารถกด <strong>&ldquo;คัดลอกตารางข้อมูล&rdquo;</strong> แล้วสลับไปที่ Google Sheets และกด <code>Ctrl + V</code> ที่ช่อง <code>A1</code>
+              2. เมื่อเปิดระบบ <strong>Auto-Sync</strong> ไว้ ทุกครั้งที่มีการบันทึกหรือแก้ไขอะไหล่/ลูกค้า/ใบสั่งซ่อม ระบบจะซิงค์ข้อมูลขึ้น Google Sheets อัตโนมัติในเบื้องหลัง
             </p>
             <p>
-              3. กด <strong>&ldquo;ซิงค์ข้อมูลเดี๋ยวนี้&rdquo;</strong> เมื่อใดก็ได้ที่ต้องการอัปเดตสต็อกหรือลูกค้าล่าสุดขึ้นไปยังสเปรดชีต
+              3. ไปที่แท็บ <strong>&ldquo;4. โค้ด Apps Script&rdquo;</strong> เพื่อคัดลอกโค้ดไปวางใน Google Sheet ให้สามารถอัปเดตข้อมูลกลับมายังระบบได้แบบ Real-time สองทาง
             </p>
           </div>
         </div>

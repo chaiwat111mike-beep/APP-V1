@@ -408,41 +408,41 @@ export const PrintDocumentModal: React.FC<PrintDocumentModalProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 text-slate-800">
-                    {job.partsUsed.length === 0 && job.laborFee === 0 && (
+                    {(job.partsUsed || []).length === 0 && (job.laborFee || 0) === 0 && (
                       <tr>
                         <td colSpan={5} className="px-3 py-4 text-center text-slate-500 italic">
                           ไม่มีรายการอะไหล่และค่าบริการ
                         </td>
                       </tr>
                     )}
-                    {job.partsUsed.map((p, idx) => (
-                      <tr key={p.partId}>
+                    {(job.partsUsed || []).map((p, idx) => (
+                      <tr key={p.partId || idx}>
                         <td className="px-3 py-2 text-center">{idx + 1}</td>
                         <td className="px-3 py-2">
                           <span className="font-semibold">{p.partName}</span>
                           <span className="text-[10px] text-slate-500 block font-mono">{p.partCode}</span>
                         </td>
                         <td className="px-3 py-2 text-center font-mono">{p.quantity}</td>
-                        <td className="px-3 py-2 text-right font-mono">{p.unitPrice.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right font-semibold font-mono">{p.totalPrice.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right font-mono">{(p.unitPrice || 0).toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right font-semibold font-mono">{(p.totalPrice || 0).toLocaleString()}</td>
                       </tr>
                     ))}
                     
                     {/* Labor Row */}
-                    {job.laborFee > 0 && (
+                    {(job.laborFee || 0) > 0 && (
                       <tr>
-                        <td className="px-3 py-2 text-center">{job.partsUsed.length + 1}</td>
+                        <td className="px-3 py-2 text-center">{(job.partsUsed || []).length + 1}</td>
                         <td className="px-3 py-2 font-semibold">ค่าแรงช่างและบริการซ่อมบำรุงตรวจเช็ค</td>
                         <td className="px-3 py-2 text-center font-mono">1</td>
-                        <td className="px-3 py-2 text-right font-mono">{job.laborFee.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right font-semibold font-mono">{job.laborFee.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right font-mono">{(job.laborFee || 0).toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right font-semibold font-mono">{(job.laborFee || 0).toLocaleString()}</td>
                       </tr>
                     )}
 
                     {/* Other Fee Row */}
                     {(job.otherFee || 0) > 0 && (
                       <tr>
-                        <td className="px-3 py-2 text-center">{job.partsUsed.length + (job.laborFee > 0 ? 2 : 1)}</td>
+                        <td className="px-3 py-2 text-center">{(job.partsUsed || []).length + ((job.laborFee || 0) > 0 ? 2 : 1)}</td>
                         <td className="px-3 py-2 font-semibold">
                           ค่าบริการอื่นๆ / ค่าซับนอก {job.otherFeeDescription ? `(${job.otherFeeDescription})` : ''}
                         </td>
@@ -498,7 +498,7 @@ export const PrintDocumentModal: React.FC<PrintDocumentModalProps> = ({
 
                 <div className="w-full sm:w-80 space-y-1.5 bg-slate-50 p-3.5 rounded-xl border border-slate-300 text-slate-800">
                   <div className="flex justify-between">
-                    <span>รวมค่าอะไหล่ ({job.partsUsed.length} รายการ):</span>
+                    <span>รวมค่าอะไหล่ ({(job.partsUsed || []).length} รายการ):</span>
                     <span className="font-mono">฿{financials.partsTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                   </div>
                   <div className="flex justify-between">

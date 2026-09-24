@@ -77,11 +77,12 @@ export const InventoryView: React.FC = () => {
   ];
 
   const filteredParts = spareParts.filter((part) => {
+    const q = searchQuery.toLowerCase();
     const matchesSearch =
-      part.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      part.partCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      part.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      part.compatibleModels.toLowerCase().includes(searchQuery.toLowerCase());
+      (part.name || '').toLowerCase().includes(q) ||
+      (part.partCode || '').toLowerCase().includes(q) ||
+      (part.brand || '').toLowerCase().includes(q) ||
+      (part.compatibleModels || '').toLowerCase().includes(q);
 
     const matchesCategory = categoryFilter === 'all' || part.category === categoryFilter;
 

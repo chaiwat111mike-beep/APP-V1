@@ -48,11 +48,11 @@ export const BillingReportView: React.FC<BillingReportViewProps> = ({
   let totalLaborRevenue = 0;
 
   jobOrders.forEach((j) => {
-    j.partsUsed.forEach((p) => {
-      totalPartsCost += (p.costPrice * p.quantity);
-      totalPartsRevenue += p.totalPrice;
+    (j.partsUsed || []).forEach((p) => {
+      totalPartsCost += ((p.costPrice || 0) * (p.quantity || 0));
+      totalPartsRevenue += (p.totalPrice ?? ((p.unitPrice || 0) * (p.quantity || 0)));
     });
-    totalLaborRevenue += j.laborFee;
+    totalLaborRevenue += (j.laborFee || 0);
   });
 
   const partsProfitMargin = totalPartsRevenue > 0 ? ((totalPartsRevenue - totalPartsCost) / totalPartsRevenue) * 100 : 0;
@@ -222,25 +222,25 @@ export const BillingReportView: React.FC<BillingReportViewProps> = ({
                   <span className="font-bold text-orange-400 font-mono">{selectedInvoice.licensePlate}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">รายการอะไหล่ ({selectedInvoice.partsUsed.length} รายการ):</span>
+                  <span className="text-gray-400">รายการอะไหล่ ({(selectedInvoice.partsUsed || []).length} รายการ):</span>
                   <span className="text-gray-200 font-mono">
-                    ฿{selectedInvoice.partsUsed.reduce((s, p) => s + p.totalPrice, 0).toLocaleString()}
+                    ฿{((selectedInvoice.partsUsed || []).reduce((s, p) => s + (p.totalPrice || 0), 0)).toLocaleString()}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">ค่าแรงช่าง:</span>
-                  <span className="text-gray-200 font-mono">฿{selectedInvoice.laborFee.toLocaleString()}</span>
+                  <span className="text-gray-200 font-mono">฿{(selectedInvoice.laborFee || 0).toLocaleString()}</span>
                 </div>
-                {selectedInvoice.discount > 0 && (
+                {(selectedInvoice.discount || 0) > 0 && (
                   <div className="flex justify-between text-green-400">
                     <span>ส่วนลดพิเศษ:</span>
-                    <span className="font-mono">-฿{selectedInvoice.discount.toLocaleString()}</span>
+                    <span className="font-mono">-฿{(selectedInvoice.discount || 0).toLocaleString()}</span>
                   </div>
                 )}
                 <div className="pt-2 border-t border-[#2D3135] flex justify-between items-baseline font-bold text-sm">
                   <span className="text-gray-200">ยอดรวมทั้งสิ้น:</span>
                   <span className="text-lg font-mono text-orange-400 font-bold">
-                    ฿{selectedInvoice.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    ฿{(selectedInvoice.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>

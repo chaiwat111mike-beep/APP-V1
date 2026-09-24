@@ -20,7 +20,8 @@ import {
   Calendar,
   DollarSign,
   FileSpreadsheet,
-  Download
+  Download,
+  History
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { JobOrder, JobStatus, JobPriority } from '../types';
@@ -31,12 +32,14 @@ interface JobOrdersViewProps {
   onSelectJob: (jobId: string) => void;
   onOpenNewJobModal: () => void;
   onPrintJob: (job: JobOrder, docType: 'job_order' | 'quotation' | 'receipt') => void;
+  onNavigateToHistory?: () => void;
 }
 
 export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
   onSelectJob,
   onOpenNewJobModal,
   onPrintJob,
+  onNavigateToHistory,
 }) => {
   const { jobOrders, updateJobStatus, deleteJobOrder } = useGarage();
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
@@ -46,13 +49,14 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
   const [deleteConfirmJob, setDeleteConfirmJob] = useState<{ id: string; jobNo: string } | null>(null);
 
   const filteredJobs = jobOrders.filter((job) => {
+    const q = searchQuery.toLowerCase();
     const matchesSearch =
-      job.licensePlate.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      job.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      job.customerPhone.includes(searchQuery) ||
-      job.jobNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      job.carBrand.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      job.carModel.toLowerCase().includes(searchQuery.toLowerCase());
+      (job.licensePlate || '').toLowerCase().includes(q) ||
+      (job.customerName || '').toLowerCase().includes(q) ||
+      (job.customerPhone || '').includes(q) ||
+      (job.jobNo || '').toLowerCase().includes(q) ||
+      (job.carBrand || '').toLowerCase().includes(q) ||
+      (job.carModel || '').toLowerCase().includes(q);
 
     const matchesStatus = statusFilter === 'all' || job.status === statusFilter;
     const matchesPriority = priorityFilter === 'all' || job.priority === priorityFilter;
@@ -173,6 +177,17 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
               <span>ตาราง (List)</span>
             </button>
           </div>
+
+          {onNavigateToHistory && (
+            <button
+              onClick={onNavigateToHistory}
+              className="px-3.5 py-2 rounded-xl bg-blue-950/40 hover:bg-blue-900/60 border border-blue-600/40 text-blue-300 font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm"
+              title="เปิดดูคลังประวัติใบสั่งซ่อมและไทม์ไลน์การซ่อมบำรุงย้อนหลัง"
+            >
+              <History className="w-3.5 h-3.5 text-blue-400" />
+              <span>ประวัติใบซ่อมย้อนหลัง</span>
+            </button>
+          )}
 
           <button
             onClick={handleExportCsv}

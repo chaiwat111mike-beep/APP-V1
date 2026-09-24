@@ -220,7 +220,18 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
         ) : (
           filteredCustomers.map((customer) => {
             const isExpanded = expandedCustomerId === customer.id;
-            const customerJobs = jobOrders.filter((j) => j.customerId === customer.id || j.customerPhone === customer.phone);
+            const customerJobs = jobOrders.filter(
+              (j) =>
+                (j as any).customerId === customer.id ||
+                j.customerPhone === customer.phone ||
+                (customer.vehicles || []).some(
+                  (v) => (v.licensePlate || '').trim().toLowerCase() === (j.licensePlate || '').trim().toLowerCase()
+                )
+            );
+            const totalVisitsCount = customerJobs.length > 0 ? customerJobs.length : (customer.totalVisits || 0);
+            const totalSpentAmount = customerJobs.length > 0 
+              ? customerJobs.reduce((sum, j) => sum + (j.totalAmount || 0), 0)
+              : (customer.totalSpent || 0);
 
             return (
               <div
@@ -274,7 +285,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                     <div className="text-right">
                       <p className="text-[11px] text-gray-400">ประวัติเข้าบริการ / ยอดรวม</p>
                       <p className="text-xs font-semibold text-gray-200">
-                        <strong className="text-orange-400 font-mono">{customer.totalVisits}</strong> ครั้ง • <strong className="text-emerald-400 font-mono">฿{customer.totalSpent.toLocaleString()}</strong>
+                        <strong className="text-orange-400 font-mono">{totalVisitsCount}</strong> ครั้ง • <strong className="text-emerald-400 font-mono">฿{totalSpentAmount.toLocaleString()}</strong>
                       </p>
                     </div>
 

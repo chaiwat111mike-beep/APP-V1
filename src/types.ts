@@ -142,6 +142,7 @@ export interface MechanicStaff {
   phone: string;
   email?: string;
   role: 'lead' | 'mechanic' | 'electrician' | 'apprentice';
+  positionTitle?: string;
   avatar?: string;
   specialties: string[];
   activeJobsCount: number;
@@ -187,19 +188,27 @@ export interface GarageProfile {
   bannerImage?: string;
   jobNoPrefix?: string; // e.g. "JOB", "SK", "REP"
   jobNoFormat?: 'daily' | 'monthly'; // 'daily' (JOB-YYYYMMDD-XXX) or 'monthly' (JOB-YYYYMM-XXX)
+  googleSheetsId?: string;
   googleSheetsInventoryId?: string;
   googleSheetsCustomersId?: string;
+  googleSheetsJobOrdersId?: string;
   autoSyncGoogleSheets?: boolean;
 }
 
 export interface GoogleSheetsSyncConfig {
+  spreadsheetId?: string;
+  spreadsheetUrl?: string;
   inventorySpreadsheetId?: string;
   inventorySpreadsheetUrl?: string;
   customersSpreadsheetId?: string;
   customersSpreadsheetUrl?: string;
+  jobOrdersSpreadsheetId?: string;
+  jobOrdersSpreadsheetUrl?: string;
   autoSync: boolean;
   lastInventorySyncAt?: string;
   lastCustomersSyncAt?: string;
+  lastJobOrdersSyncAt?: string;
+  lastFullSyncAt?: string;
   status: 'idle' | 'syncing' | 'synced' | 'error';
   errorMessage?: string;
 }
