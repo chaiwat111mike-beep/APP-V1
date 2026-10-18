@@ -96,7 +96,7 @@ export const RepairHistoryView: React.FC<RepairHistoryViewProps> = ({
       } else if (statusFilter === 'completed') {
         matchesStatus = job.status === 'completed';
       } else if (statusFilter === 'finished_all') {
-        matchesStatus = job.status === 'completed' || job.status === 'delivered';
+        matchesStatus = job.status === 'completed' || job.status === 'delivered' || job.status === 'closed';
       } else if (statusFilter === 'in_progress') {
         matchesStatus = job.status === 'in_progress' || job.status === 'inspecting' || job.status === 'qc';
       } else if (statusFilter !== 'all') {
@@ -284,21 +284,23 @@ export const RepairHistoryView: React.FC<RepairHistoryViewProps> = ({
   const getStatusBadge = (status: JobStatus) => {
     switch (status) {
       case 'pending':
-        return <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">รอดำเนินการ</span>;
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-yellow-500/20 text-yellow-300 border border-yellow-500/40">รอดำเนินการ</span>;
       case 'inspecting':
-        return <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">ตรวจเช็ค</span>;
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40">ตรวจเช็ค</span>;
       case 'waiting_parts':
-        return <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">รออะไหล่</span>;
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">รออะไหล่</span>;
       case 'in_progress':
-        return <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-orange-500/10 text-orange-400 border border-orange-500/20">กำลังซ่อม</span>;
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-orange-500/20 text-orange-300 border border-orange-500/40">กำลังซ่อม</span>;
       case 'qc':
-        return <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20">ทดสอบ QC</span>;
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">ทดสอบ QC</span>;
       case 'completed':
-        return <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-green-500/10 text-green-400 border border-green-500/20">ซ่อมเสร็จ</span>;
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">ซ่อมเสร็จ</span>;
       case 'delivered':
-        return <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#1C2025] text-gray-300 border border-[#2D3135]">ส่งมอบแล้ว</span>;
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">ส่งมอบแล้ว</span>;
+      case 'closed':
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-600/20 text-emerald-300 border border-emerald-500/50">🏁 ปิดใบซ่อมแล้ว</span>;
       default:
-        return <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-gray-500/10 text-gray-400 border border-gray-500/20">{status}</span>;
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-gray-500/20 text-gray-300 border border-gray-500/30">{status}</span>;
     }
   };
 
@@ -311,6 +313,7 @@ export const RepairHistoryView: React.FC<RepairHistoryViewProps> = ({
       case 'qc': return 'ทดสอบ QC';
       case 'completed': return 'ซ่อมเสร็จสมบูรณ์';
       case 'delivered': return 'ส่งมอบรถแล้ว';
+      case 'closed': return '🏁 ปิดใบซ่อมสมบูรณ์';
       default: return status;
     }
   }
@@ -552,7 +555,8 @@ export const RepairHistoryView: React.FC<RepairHistoryViewProps> = ({
               className="w-full p-2 bg-[#0F1113] border border-[#2D3135] rounded-lg text-gray-200 focus:outline-none focus:border-blue-500"
             >
               <option value="all">ทุกสถานะ</option>
-              <option value="finished_all">ซ่อมเสร็จ & ส่งมอบแล้ว</option>
+              <option value="finished_all">ซ่อมเสร็จ & ส่งมอบ/ปิดใบซ่อมแล้ว</option>
+              <option value="closed">🏁 ปิดใบซ่อมสมบูรณ์ (Closed)</option>
               <option value="delivered">ส่งมอบแล้ว (Delivered)</option>
               <option value="completed">ซ่อมเสร็จสมบูรณ์ (Completed)</option>
               <option value="in_progress">กำลังดำเนินการซ่อม</option>

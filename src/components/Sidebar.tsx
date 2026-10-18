@@ -14,7 +14,8 @@ import {
   Sparkles,
   Flame,
   X,
-  History
+  History,
+  FileSpreadsheet
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { GarageLogo } from './GarageLogo';
@@ -41,11 +42,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const isBayOccupied = (b: (typeof serviceBays)[0]) =>
     (b.status === 'occupied' ||
       jobOrders.some(
-        (j) => j.bayNumber === b.bayNumber && j.status !== 'delivered' && j.status !== 'completed'
+        (j) => j.bayNumber === b.bayNumber && j.status !== 'delivered' && j.status !== 'completed' && j.status !== 'closed'
       )) &&
     b.status !== 'maintenance';
 
-  const activeJobs = jobOrders.filter((j) => j.status !== 'delivered' && j.status !== 'completed').length;
+  const activeJobs = jobOrders.filter((j) => j.status !== 'delivered' && j.status !== 'completed' && j.status !== 'closed').length;
   const readyPickupJobs = jobOrders.filter((j) => j.status === 'completed').length;
   const lowStockCount = spareParts.filter((p) => p.stockQty <= p.minStockQty).length;
   const occupiedBays = serviceBays.filter(isBayOccupied).length;
@@ -95,8 +96,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Receipt,
     },
     {
+      id: 'sheets',
+      label: 'Google Sheets (ข้อมูลสด)',
+      icon: FileSpreadsheet,
+      badge: 'LIVE ชีต',
+      badgeColor: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold',
+    },
+    {
       id: 'settings',
-      label: 'ตั้งค่า & Firebase DB',
+      label: 'ตั้งค่า & ฐานข้อมูล',
       icon: Settings,
     },
   ];
@@ -117,18 +125,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   setActiveTab(item.id);
                   setIsSidebarOpen?.(false);
                 }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm transition-all text-left ${
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm transition-all text-left ${
                   isActive
-                    ? 'bg-orange-500/10 border-l-4 border-orange-500 text-orange-400 font-bold'
-                    : 'text-gray-400 hover:text-white hover:bg-[#1C2025] font-medium'
+                    ? 'bg-orange-500/15 border-l-4 border-orange-500 text-orange-300 font-black shadow-sm'
+                    : 'text-gray-200 hover:text-white hover:bg-[#1E2329] font-bold'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-orange-400 stroke-[2.5]' : 'text-gray-400'}`} />
-                  <span>{item.label}</span>
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-orange-400 stroke-[2.5]' : 'text-gray-300'}`} />
+                  <span className="tracking-wide">{item.label}</span>
                 </div>
                 {item.badge && !isActive && (
-                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${item.badgeColor}`}>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${item.badgeColor}`}>
                     {item.badge}
                   </span>
                 )}
@@ -198,6 +206,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <span className="text-[10px] bg-[#06C755] text-white px-1.5 py-0.5 rounded font-medium">แชท</span>
         </a>
+
+        {/* System Version 2.0 Badge */}
+        <div className="pt-1 px-1 flex items-center justify-between text-[11px] text-gray-400">
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="w-3 h-3 text-emerald-400" />
+            <span className="font-semibold text-gray-300">เวอร์ชั่น 2.0.0 (ใหม่)</span>
+          </div>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono font-bold border border-emerald-500/20">
+            LIVE SHEETS
+          </span>
+        </div>
       </div>
     </>
   );

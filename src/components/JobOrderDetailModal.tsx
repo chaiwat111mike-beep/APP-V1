@@ -33,7 +33,8 @@ import {
   Eye
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
-import { JobOrder, JobStatus, PaymentMethod, PaymentStatus, SparePart } from '../types';
+import { JobOrder, JobStatus, PaymentMethod, PaymentStatus, SparePart, LaborServiceItem } from '../types';
+import { initialStandardLaborPresets } from '../data/initialData';
 import { LineNotificationModal } from './LineNotificationModal';
 import { PromptPayQRModal } from './PromptPayQRModal';
 import {
@@ -68,6 +69,7 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
     serviceBays,
     updateJobOrder,
     updateJobStatus,
+    closeJobOrder,
     addPartToJob,
     removePartFromJob,
     updateJobPayment,
@@ -89,7 +91,8 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
       .filter(
         (j) =>
           j.id !== job.id &&
-          j.licensePlate.trim().toLowerCase() === job.licensePlate.trim().toLowerCase()
+          !!job.licensePlate &&
+          (j.licensePlate || '').trim().toLowerCase() === (job.licensePlate || '').trim().toLowerCase()
       )
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [jobOrders, job]);
@@ -101,6 +104,12 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
   const [partQuantity, setPartQuantity] = useState<number>(1);
   
   const [laborFeeInput, setLaborFeeInput] = useState<number>(0);
+  const [laborDetailsInput, setLaborDetailsInput] = useState<LaborServiceItem[]>([]);
+  const [laborDescriptionInput, setLaborDescriptionInput] = useState<string>('');
+  const [isEditingLaborDetails, setIsEditingLaborDetails] = useState<boolean>(false);
+  const [newDetailTitle, setNewDetailTitle] = useState<string>('');
+  const [newDetailFee, setNewDetailFee] = useState<string>('');
+
   const [otherFeeInput, setOtherFeeInput] = useState<number>(0);
   const [otherFeeDescInput, setOtherFeeDescInput] = useState<string>('');
   const [discountTypeInput, setDiscountTypeInput] = useState<'amount' | 'percent'>('amount');
@@ -121,11 +130,15 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
 
   const [isLineModalOpen, setIsLineModalOpen] = useState<boolean>(false);
   const [isPromptPayModalOpen, setIsPromptPayModalOpen] = useState<boolean>(false);
+  const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState<boolean>(false);
+  const [closeNotesInput, setCloseNotesInput] = useState<string>('');
 
   // Sync state with active job on modal open or job change
   useEffect(() => {
     if (job) {
       setLaborFeeInput(job.laborFee || 0);
+      setLaborDetailsInput(job.laborDetails || []);
+      setLaborDescriptionInput(job.laborDescription || '');
       setOtherFeeInput(job.otherFee || 0);
       setOtherFeeDescInput(job.otherFeeDescription || '');
       setDiscountTypeInput(job.discountType || 'amount');
@@ -153,6 +166,7 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
     { key: 'qc', label: '5. ทดสอบ QC', icon: '🧪' },
     { key: 'completed', label: '6. ซ่อมเสร็จ', icon: '✅' },
     { key: 'delivered', label: '7. ส่งมอบแล้ว', icon: '🚗' },
+    { key: 'closed', label: '8. ปิดใบซ่อม', icon: '🏁' },
   ];
 
   // Calculate live breakdown
@@ -190,10 +204,76 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
     setPartQuantity(1);
   };
 
+  const handleAddLaborDetail = (title?: string, fee?: number) => {
+    const finalTitle = (title !== undefined ? title : newDetailTitle).trim();
+    if (!finalTitle) return;
+    const finalFee = fee !== undefined ? fee : Math.max(0, Number(newDetailFee) || 0);
+    const newItem: LaborServiceItem = {
+      id: `labor_detail_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      title: finalTitle,
+      fee: finalFee,
+    };
+    const updated = [...laborDetailsInput, newItem];
+    setLaborDetailsInput(updated);
+    const sum = updated.reduce((s, i) => s + (Number(i.fee) || 0), 0);
+    setLaborFeeInput(sum);
+
+    const autoDesc = updated.map((i) => i.title).join(', ');
+    const finalDesc = laborDescriptionInput.trim() ? laborDescriptionInput.trim() : autoDesc;
+    if (!laborDescriptionInput.trim()) {
+      setLaborDescriptionInput(autoDesc);
+    }
+
+    if (title === undefined) {
+      setNewDetailTitle('');
+      setNewDetailFee('');
+    }
+
+    // Persist immediately
+    updateJobOrder(job.id, {
+      laborFee: sum,
+      laborDetails: updated,
+      laborDescription: finalDesc || undefined,
+    });
+  };
+
+  const handleRemoveLaborDetail = (id: string) => {
+    const updated = laborDetailsInput.filter((i) => i.id !== id);
+    setLaborDetailsInput(updated);
+    const sum = updated.reduce((s, i) => s + (Number(i.fee) || 0), 0);
+    setLaborFeeInput(sum);
+
+    const oldAutoDesc = laborDetailsInput.map((i) => i.title).join(', ');
+    const newAutoDesc = updated.map((i) => i.title).join(', ');
+    let finalDesc = laborDescriptionInput;
+    if (!laborDescriptionInput.trim() || laborDescriptionInput.trim() === oldAutoDesc) {
+      finalDesc = newAutoDesc;
+      setLaborDescriptionInput(newAutoDesc);
+    }
+
+    // Persist immediately
+    updateJobOrder(job.id, {
+      laborFee: sum,
+      laborDetails: updated.length > 0 ? updated : undefined,
+      laborDescription: finalDesc.trim() || undefined,
+    });
+  };
+
+  const handleApplyPresetDirect = (preset: LaborServiceItem) => {
+    setLaborFeeInput(preset.fee);
+    setLaborDescriptionInput(preset.title);
+    updateJobOrder(job.id, {
+      laborFee: preset.fee,
+      laborDescription: preset.title,
+    });
+  };
+
   const handleSaveFinancials = () => {
     const isAlreadyPaid = job.paymentStatus === 'paid';
     updateJobOrder(job.id, {
       laborFee: financials.laborFee,
+      laborDetails: laborDetailsInput.length > 0 ? laborDetailsInput : undefined,
+      laborDescription: laborDescriptionInput.trim() || undefined,
       otherFee: financials.otherFee,
       otherFeeDescription: otherFeeDescInput.trim(),
       discount: financials.discountAmount,
@@ -287,16 +367,25 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
             <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">
               ความคืบหน้าของงานซ่อม (คลิกเพื่อเปลี่ยนสถานะ)
             </span>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 pt-1">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 pt-1">
               {statuses.map((st) => {
                 const isActive = job.status === st.key;
                 return (
                   <button
                     key={st.key}
-                    onClick={() => updateJobStatus(job.id, st.key)}
+                    type="button"
+                    onClick={() => {
+                      if (st.key === 'closed') {
+                        setIsCloseConfirmOpen(true);
+                      } else {
+                        updateJobStatus(job.id, st.key);
+                      }
+                    }}
                     className={`px-2 py-2 rounded-lg text-xs font-bold transition-all text-center flex flex-col items-center justify-center gap-1 border ${
                       isActive
-                        ? 'bg-orange-500 text-white border-orange-500 shadow-md shadow-orange-500/20'
+                        ? st.key === 'closed'
+                          ? 'bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-500/20'
+                          : 'bg-orange-500 text-white border-orange-500 shadow-md shadow-orange-500/20'
                         : 'bg-[#16191D] text-gray-300 border-[#2D3135] hover:bg-[#1C2025] hover:text-white'
                     }`}
                   >
@@ -307,6 +396,76 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
               })}
             </div>
           </div>
+
+          {/* Delivered -> Ready to Close Job Order Banner */}
+          {job.status === 'delivered' && (
+            <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-950/40 via-emerald-900/30 to-blue-950/40 border-2 border-emerald-500/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl animate-in fade-in">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl shrink-0 border border-emerald-500/30">
+                  🚗
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-white flex items-center gap-2">
+                    <span>รถยนต์คันนี้ส่งมอบให้ลูกค้าเรียบร้อยแล้ว</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-500/40">
+                      DELIVERED
+                    </span>
+                  </h4>
+                  <p className="text-xs text-emerald-100/80 mt-0.5">
+                    เจ้าของอู่สามารถกด "ปิดใบซ่อม" เพื่อสิ้นสุดกระบวนการทั้งหมดและบันทึกประวัติถาวร
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsCloseConfirmOpen(true)}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs sm:text-sm flex items-center gap-2 shadow-lg shadow-emerald-600/30 active:scale-95 transition-all shrink-0 cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4 stroke-[3]" />
+                <span>ปิดใบซ่อมสมบูรณ์ (Close Job)</span>
+              </button>
+            </div>
+          )}
+
+          {/* Job Closed Banner */}
+          {job.status === 'closed' && (
+            <div className="p-4 rounded-xl bg-[#14181D] border-2 border-emerald-500/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl shrink-0 border border-emerald-500/30">
+                  🏁
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-emerald-400 flex items-center gap-2">
+                    <span>ใบสั่งซ่อมนี้ปิดงานสมบูรณ์แล้ว (Job Order Closed)</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono font-bold border border-emerald-500/30">
+                      CLOSED
+                    </span>
+                  </h4>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    ปิดงานเมื่อ:{' '}
+                    <span className="font-mono text-white font-bold">
+                      {formatThaiDateTime(job.closedAt || job.updatedAt)}
+                    </span>
+                    {job.closeNotes && (
+                      <span className="ml-2 text-gray-300 italic font-medium">
+                        — โน้ต: {job.closeNotes}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => updateJobStatus(job.id, 'delivered')}
+                className="px-3 py-1.5 rounded-lg bg-[#0F1113] hover:bg-[#20252C] border border-[#2D3135] text-gray-400 hover:text-white font-medium text-xs transition-colors shrink-0"
+                title="หากต้องการเปิดใบซ่อมเพื่อแก้ไขข้อมูลเพิ่มเติม"
+              >
+                ย้อนกลับเป็นสถานะส่งมอบ
+              </button>
+            </div>
+          )}
 
           {/* Date Tracking Banner (Feature 2) */}
           <div className="bg-[#0F1113] border border-[#2D3135] rounded-xl p-4">
@@ -511,12 +670,47 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
                     <span className="font-bold text-orange-400 font-mono">{job.inspection?.fuelLevel ?? 60}%</span>
                   </div>
                   <div className="bg-[#16191D] p-2.5 rounded-lg border border-[#2D3135]">
-                    <span className="text-gray-400 block text-[10px]">ช่างผู้รับผิดชอบ</span>
-                    <span className="font-bold text-gray-200">{job.mechanicName || 'ยังไม่ระบุ'}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400 block text-[10px]">ช่างผู้รับผิดชอบ</span>
+                    </div>
+                    <select
+                      value={job.mechanicId || ''}
+                      onChange={(e) => {
+                        const m = mechanics.find(mech => mech.id === e.target.value);
+                        updateJobOrder(job.id, {
+                          mechanicId: m ? m.id : undefined,
+                          mechanicName: m ? m.name : undefined,
+                        });
+                      }}
+                      className="w-full mt-1 bg-[#0F1113] border border-[#2D3135] focus:border-orange-500 rounded px-1.5 py-1 text-xs text-orange-300 font-bold focus:outline-none"
+                    >
+                      <option value="">ยังไม่ระบุช่าง</option>
+                      {mechanics.map((mech) => (
+                        <option key={mech.id} value={mech.id}>
+                          {mech.name} ({mech.specialties[0] || 'ช่างประจำ'})
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="bg-[#16191D] p-2.5 rounded-lg border border-[#2D3135]">
-                    <span className="text-gray-400 block text-[10px]">ช่องซ่อม (Hoist)</span>
-                    <span className="font-bold text-green-400 font-mono">ช่อง #{job.bayNumber || '-'}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400 block text-[10px]">ช่องซ่อม (Hoist)</span>
+                    </div>
+                    <select
+                      value={job.bayNumber || ''}
+                      onChange={(e) => {
+                        const bayNum = e.target.value ? Number(e.target.value) : undefined;
+                        updateJobOrder(job.id, { bayNumber: bayNum });
+                      }}
+                      className="w-full mt-1 bg-[#0F1113] border border-[#2D3135] focus:border-green-500 rounded px-1.5 py-1 text-xs text-green-400 font-mono font-bold focus:outline-none"
+                    >
+                      <option value="">ไม่มีช่องซ่อม</option>
+                      {serviceBays.map((bay) => (
+                        <option key={bay.id} value={bay.bayNumber}>
+                          ช่อง #{bay.bayNumber} - {bay.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
@@ -698,17 +892,154 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
                     <span className="font-semibold text-white font-mono">฿{(financials.partsTotal || 0).toLocaleString()}</span>
                   </div>
 
-                  {/* Labor Fee */}
-                  <div className="flex items-center justify-between text-gray-300">
-                    <span>ค่าแรงช่าง / บริการ:</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={laborFeeInput}
-                      onChange={(e) => setLaborFeeInput(Number(e.target.value))}
-                      onBlur={handleSaveFinancials}
-                      className="w-24 px-2 py-1 bg-[#16191D] border border-[#2D3135] rounded-lg text-right text-xs text-white font-mono focus:outline-none focus:border-orange-500"
-                    />
+                  {/* Labor Fee (Customizable) */}
+                  <div className="p-2.5 bg-[#16191D] border border-orange-500/25 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between text-gray-300">
+                      <div className="flex items-center gap-1.5">
+                        <Wrench className="w-3.5 h-3.5 text-orange-400" />
+                        <span className="font-bold text-gray-200">ค่าแรงช่าง / บริการ:</span>
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingLaborDetails(!isEditingLaborDetails)}
+                          className="text-[10px] text-orange-400 hover:text-orange-300 underline font-medium ml-1"
+                        >
+                          {isEditingLaborDetails ? 'ซ่อนรายละเอียด' : `แยกรายการ/ปรับแต่ง (${laborDetailsInput.length})`}
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-gray-400 text-xs">฿</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={laborFeeInput}
+                          onChange={(e) => setLaborFeeInput(Number(e.target.value))}
+                          onBlur={handleSaveFinancials}
+                          className="w-24 px-2 py-1 bg-[#0F1113] border border-[#2D3135] rounded-lg text-right text-xs text-orange-400 font-mono font-bold focus:outline-none focus:border-orange-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Labor Summary Description (printed in receipt/invoice) */}
+                    <div className="pt-1.5 border-t border-[#2D3135]/60 flex items-center gap-1.5 text-xs">
+                      <span className="text-[11px] text-gray-400 shrink-0">สรุปงานบริการ:</span>
+                      <input
+                        type="text"
+                        value={laborDescriptionInput}
+                        onChange={(e) => setLaborDescriptionInput(e.target.value)}
+                        onBlur={handleSaveFinancials}
+                        placeholder="ระบุคำอธิบายสรุปงานบริการสำหรับพิมพ์ลงในบิล (เช่น เช็คระยะ 40,000 กม., ถ่ายน้ำมันเครื่อง)..."
+                        className="flex-1 px-2 py-1 bg-[#0F1113] border border-[#2D3135] rounded-lg text-white text-[11px] placeholder-gray-500 focus:outline-none focus:border-orange-500"
+                      />
+                    </div>
+
+                    {/* Quick Presets for Direct or Itemized */}
+                    <div className="pt-1 border-t border-[#2D3135]/40 space-y-1">
+                      <div className="flex items-center justify-between text-[11px] text-gray-400">
+                        <span>⚡ รายการค่าบริการมาตรฐานของอู่ (คลิกเพื่อ{isEditingLaborDetails ? 'เพิ่มเข้ารายการ' : 'กำหนดยอดนี้'}):</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLaborFeeInput(0);
+                            setLaborDescriptionInput('ฟรีค่าบริการ (โปรโมชั่น)');
+                            setLaborDetailsInput([]);
+                            updateJobOrder(job.id, {
+                              laborFee: 0,
+                              laborDescription: 'ฟรีค่าบริการ (โปรโมชั่น)',
+                              laborDetails: undefined,
+                            });
+                          }}
+                          className="text-gray-400 hover:text-orange-400 text-[10px] underline"
+                        >
+                          ฟรีค่าบริการ ฿0
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto pr-1">
+                        {(garageProfile.standardLaborPresets && garageProfile.standardLaborPresets.length > 0 
+                          ? garageProfile.standardLaborPresets 
+                          : initialStandardLaborPresets
+                        ).map((preset, pIdx) => (
+                          <button
+                            key={preset.id || pIdx}
+                            type="button"
+                            onClick={() => {
+                              if (isEditingLaborDetails) {
+                                handleAddLaborDetail(preset.title, preset.fee);
+                              } else {
+                                handleApplyPresetDirect(preset);
+                              }
+                            }}
+                            title={`คลิกเพื่อ${isEditingLaborDetails ? 'เพิ่มเข้ารายการ' : 'กำหนดราคาค่าบริการนี้'}`}
+                            className="px-1.5 py-0.5 bg-[#0F1113] hover:bg-orange-500/20 text-gray-300 hover:text-orange-300 border border-[#2D3135] hover:border-orange-500/40 rounded text-[10px] transition-colors flex items-center gap-1 active:scale-95"
+                          >
+                            <span>{preset.title}</span>
+                            <span className="font-mono text-orange-400 font-bold">฿{preset.fee.toLocaleString()}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Expandable Custom Labor Breakdown */}
+                    {isEditingLaborDetails && (
+                      <div className="space-y-2 pt-2 border-t border-[#2D3135] text-[11px]">
+                        {laborDetailsInput.length > 0 && (
+                          <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                            {laborDetailsInput.map((item, idx) => (
+                              <div key={item.id || idx} className="flex items-center justify-between p-1.5 bg-[#0F1113] border border-[#2D3135] rounded-lg">
+                                <span className="text-gray-300 truncate max-w-[150px]">{item.title}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono font-bold text-orange-300">฿{Number(item.fee || 0).toLocaleString()}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveLaborDetail(item.id)}
+                                    className="text-gray-500 hover:text-red-400 p-0.5"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Add custom labor detail row */}
+                        <div className="flex items-center gap-1.5 pt-1">
+                          <input
+                            type="text"
+                            placeholder="ชื่อบริการ (เช่น ถ่ายน้ำมันเกียร์, ล้างแอร์)..."
+                            value={newDetailTitle}
+                            onChange={(e) => setNewDetailTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddLaborDetail();
+                              }
+                            }}
+                            className="flex-1 p-1.5 bg-[#0F1113] border border-[#2D3135] rounded text-white text-[11px] focus:outline-none focus:border-orange-500"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="฿ ราคา"
+                            value={newDetailFee}
+                            onChange={(e) => setNewDetailFee(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddLaborDetail();
+                              }
+                            }}
+                            className="w-16 p-1.5 bg-[#0F1113] border border-[#2D3135] rounded text-white text-[11px] font-mono text-right focus:outline-none focus:border-orange-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleAddLaborDetail()}
+                            className="px-2 py-1.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded text-[11px] active:scale-95"
+                          >
+                            + เพิ่ม
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Other Fees */}
@@ -946,6 +1277,92 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
         initialAmount={financials.grandTotal}
         initialReference={`ใบสั่งซ่อม #${job.jobNo || job.id.slice(-4)} (${job.licensePlate})`}
       />
+    )}
+
+    {/* Close Job Order Confirmation Modal */}
+    {isCloseConfirmOpen && job && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+        <div className="bg-[#14181D] border-2 border-emerald-500/60 rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-5 animate-in zoom-in-95">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center text-2xl shadow-inner shrink-0">
+              🏁
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-white">
+                ยืนยันการปิดใบสั่งซ่อม (Close Job Order)
+              </h3>
+              <p className="text-xs text-gray-300 mt-0.5">
+                สิ้นสุดขั้นตอนการซ่อมและส่งมอบรถยนต์อย่างเป็นทางการ
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-[#0F1113] border border-[#2D3135] rounded-xl p-4 space-y-2.5 text-xs">
+            <div className="flex items-center justify-between pb-2 border-b border-[#2D3135]">
+              <span className="text-gray-400">เลขที่ใบสั่งซ่อม:</span>
+              <span className="font-mono font-bold text-orange-400 text-sm">{job.jobNo}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">ทะเบียนรถ:</span>
+              <span className="font-bold text-white text-sm">{job.licensePlate} ({job.carBrand} {job.carModel})</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">ลูกค้า:</span>
+              <span className="font-semibold text-gray-200">{job.customerName} ({job.customerPhone})</span>
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-gray-400">ยอดค่าใช้จ่ายสุทธิ:</span>
+              <span className="font-mono font-black text-emerald-400 text-base">฿{financials.grandTotal.toLocaleString()}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">สถานะการชำระเงิน:</span>
+              <span className={`px-2 py-0.5 rounded font-bold ${
+                job.paymentStatus === 'paid' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
+              }`}>
+                {job.paymentStatus === 'paid' ? '✓ ชำระเงินเรียบร้อยแล้ว' : '⚠️ ยอดรอชำระ / มัดจำ'}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-200 mb-1.5">
+              หมายเหตุการปิดงาน (ถ้ามี):
+            </label>
+            <textarea
+              rows={2}
+              value={closeNotesInput}
+              onChange={(e) => setCloseNotesInput(e.target.value)}
+              placeholder="เช่น ลูกค้าทดสอบรถแล้วเรียบร้อย อู่รับประกัน 3 เดือน หรือ ข้อความเพิ่มเติม..."
+              className="w-full p-2.5 bg-[#0F1113] border border-[#2D3135] focus:border-emerald-500 rounded-xl text-xs text-white focus:outline-none placeholder-gray-500"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIsCloseConfirmOpen(false);
+                setCloseNotesInput('');
+              }}
+              className="px-4 py-2.5 rounded-xl bg-[#0F1113] hover:bg-[#1E232A] text-gray-300 font-bold text-xs border border-[#2D3135] transition-colors"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await closeJobOrder(job.id, closeNotesInput.trim() || undefined);
+                setIsCloseConfirmOpen(false);
+                setCloseNotesInput('');
+              }}
+              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm shadow-lg shadow-emerald-600/30 active:scale-95 transition-all flex items-center gap-2"
+            >
+              <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+              <span>ยืนยันปิดใบซ่อมสมบูรณ์</span>
+            </button>
+          </div>
+        </div>
+      </div>
     )}
   </>
   );

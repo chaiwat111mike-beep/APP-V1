@@ -1,4 +1,4 @@
-import { SparePart, Customer, JobOrder } from '../types';
+import { SparePart, Customer, JobOrder, JobStatus, PaymentStatus } from '../types';
 import appletConfig from '../../firebase-applet-config.json';
 
 export interface GoogleAuthToken {
@@ -207,10 +207,15 @@ export const requestGoogleOAuthToken = async (
 
     if (gsiLoaded) {
       try {
+        let isResolved = false;
+
         const client = (window as any).google.accounts.oauth2.initTokenClient({
           client_id: GOOGLE_CLIENT_ID,
           scope: scopes.join(' '),
           callback: async (response: any) => {
+            if (isResolved) return;
+            isResolved = true;
+
             if (response.error) {
               reject(new Error(response.error_description || response.error));
               return;
@@ -236,8 +241,37 @@ export const requestGoogleOAuthToken = async (
               reject(new Error('ไม่ได้รับ Access Token จาก Google'));
             }
           },
+          error_callback: (nonOAuthError: any) => {
+            if (isResolved) return;
+            isResolved = true;
+            console.warn('Google Identity Services error callback:', nonOAuthError);
+            const errType = nonOAuthError?.type || '';
+            const errMsg = String(nonOAuthError?.message || '');
+            if (errType === 'popup_blocked_by_browser' || errMsg.includes('popup') || errMsg.includes('Failed to open popup')) {
+              reject(
+                new Error(
+                  'เบราว์เซอร์บล็อกหน้าต่างป๊อปอัป (Popup Blocked) กรุณากด "อนุญาตป๊อปอัป" (Always allow popups) ที่แถบ Address Bar ด้านบน หรือใช้งานระบบดึงข้อมูลสด (Live Sheets) ได้ทันทีโดยไม่ต้องเข้าสู่ระบบ'
+                )
+              );
+            } else if (errType === 'popup_closed') {
+              reject(new Error('ผู้ใช้ปิดหน้าต่างลงชื่อเข้าใช้ Google ก่อนทำรายการเสร็จสิ้น'));
+            } else {
+              reject(new Error(errMsg || 'การเชื่อมต่อ Google ถูกระงับโดยเบราว์เซอร์'));
+            }
+          },
         });
-        client.requestAccessToken();
+
+        // Try requesting token
+        try {
+          client.requestAccessToken();
+        } catch (callErr: any) {
+          isResolved = true;
+          reject(
+            new Error(
+              `การเปิดหน้าต่างยืนยันสิทธิ์ Google ถูกบล็อกโดยเบราว์เซอร์: ${callErr?.message || callErr}`
+            )
+          );
+        }
       } catch (err: any) {
         reject(new Error(`การเรียก Google Sign-In ผิดพลาด: ${err?.message || err}`));
       }
@@ -845,6 +879,7 @@ export const syncJobOrdersToGoogleSheet = async (
       case 'qc': return '🧪 ทดสอบ QC';
       case 'completed': return '✅ ซ่อมเสร็จแล้ว (รอส่งมอบ)';
       case 'delivered': return '🚗 ส่งมอบรถเรียบร้อย';
+      case 'closed': return '🏁 ปิดใบซ่อมเรียบร้อย';
       case 'cancelled': return '❌ ยกเลิก';
       default: return s;
     }
@@ -952,7 +987,7 @@ export const syncFinancialSummaryToGoogleSheet = async (
     .reduce((acc, j) => acc + (j.depositAmount || 0), 0);
 
   const activeJobs = jobs.filter((j) => j.status === 'in_progress' || j.status === 'pending').length;
-  const completedJobs = jobs.filter((j) => j.status === 'completed' || j.status === 'delivered').length;
+  const completedJobs = jobs.filter((j) => j.status === 'completed' || j.status === 'delivered' || j.status === 'closed').length;
 
   const totalInventoryValue = parts.reduce((acc, p) => acc + (p.stockQty * p.costPrice), 0);
   const lowStockCount = parts.filter((p) => p.stockQty <= p.minStockQty).length;
@@ -1266,3 +1301,574 @@ export const downloadCsvFile = (filename: string, rows: (string | number)[][]) =
   link.click();
   document.body.removeChild(link);
 };
+
+export const copyTableToClipboard = (headers: string[], rows: (string | number)[][]): boolean => {
+  try {
+    const text = [
+      headers.join('\t'),
+      ...rows.map((r) => r.map((c) => String(c || '').replace(/\t/g, ' ')).join('\t')),
+    ].join('\n');
+    navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export interface FetchedSheetData {
+  sheetTitle: string;
+  headers: string[];
+  rows: (string | number)[][];
+  totalRows: number;
+  fetchedAt: string;
+  source: 'google_api' | 'gviz_web' | 'csv_stream';
+  spreadsheetId: string;
+  spreadsheetTitle?: string;
+  availableSheets?: string[];
+}
+
+/**
+ * CSV parser with support for quotes and escaped characters
+ */
+export const parseCsvText = (csvText: string): string[][] => {
+  const result: string[][] = [];
+  const lines = csvText.split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const row: string[] = [];
+    let insideQuotes = false;
+    let currentCell = '';
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        if (insideQuotes && line[i + 1] === '"') {
+          currentCell += '"';
+          i++;
+        } else {
+          insideQuotes = !insideQuotes;
+        }
+      } else if (char === ',' && !insideQuotes) {
+        row.push(currentCell.trim());
+        currentCell = '';
+      } else {
+        currentCell += char;
+      }
+    }
+    row.push(currentCell.trim());
+    result.push(row);
+  }
+  return result;
+};
+
+/**
+ * Parses Google Visualization API (GViz) response into tabular rows
+ */
+export const parseGvizResponse = (
+  gvizText: string
+): { headers: string[]; rows: (string | number)[][] } => {
+  const jsonStart = gvizText.indexOf('{');
+  const jsonEnd = gvizText.lastIndexOf('}');
+  if (jsonStart === -1 || jsonEnd === -1) {
+    throw new Error('รูปแบบข้อมูล GViz ไม่ถูกต้อง');
+  }
+  const rawJson = gvizText.substring(jsonStart, jsonEnd + 1);
+  const data = JSON.parse(rawJson);
+  const table = data.table;
+  if (!table) {
+    throw new Error('ไม่พบตารางข้อมูลในผลลัพธ์ของ Google Sheet');
+  }
+
+  const headers: string[] = (table.cols || []).map((col: any, idx: number) => {
+    return col.label && col.label.trim() ? col.label.trim() : `คอลัมน์ ${idx + 1}`;
+  });
+
+  const rows: (string | number)[][] = [];
+  if (Array.isArray(table.rows)) {
+    for (const r of table.rows) {
+      if (!r || !Array.isArray(r.c)) continue;
+      const rowData = r.c.map((cell: any) => {
+        if (!cell || cell.v === null || cell.v === undefined) return '';
+        // If there is formatted value cell.f, use it when appropriate, otherwise cell.v
+        return cell.f !== undefined && isNaN(Number(cell.v)) ? cell.f : cell.v;
+      });
+      // Skip completely empty rows
+      if (rowData.some((c: any) => c !== '')) {
+        rows.push(rowData);
+      }
+    }
+  }
+
+  return { headers, rows };
+};
+
+/**
+ * 6. TWO-WAY REAL-TIME: FETCH LIVE DATA DIRECTLY FROM CONNECTED GOOGLE SHEET
+ * Supports Google Sheets API v4 with OAuth token, with automatic fallback to Google Sheets GViz Web Stream
+ */
+export const fetchSheetDataFromGoogle = async (
+  spreadsheetId: string = TARGET_SPREADSHEET_ID,
+  sheetTitle: string = 'คลังสต็อกอะไหล่'
+): Promise<FetchedSheetData> => {
+  const targetId = spreadsheetId || TARGET_SPREADSHEET_ID;
+  const token = getStoredGoogleToken();
+  let spreadsheetTitle: string | undefined;
+  let availableSheets: string[] = [
+    'คลังสต็อกอะไหล่',
+    'ใบสั่งซ่อมและสถานะ',
+    'ประวัติลูกค้าและรถยนต์',
+    'สรุปภาพรวมและการเงิน',
+  ];
+
+  // 1. First Attempt: Official Google Sheets API v4 (if token is available)
+  if (token) {
+    try {
+      // Fetch spreadsheet meta
+      const metaRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${targetId}?fields=properties.title,sheets.properties.title`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (metaRes.ok) {
+        const meta = await metaRes.json();
+        spreadsheetTitle = meta.properties?.title;
+        if (meta.sheets && Array.isArray(meta.sheets)) {
+          availableSheets = meta.sheets.map((s: any) => s.properties?.title).filter(Boolean);
+        }
+      }
+
+      // Check if requested sheetTitle exists, otherwise use first available sheet
+      const targetSheet = availableSheets.includes(sheetTitle)
+        ? sheetTitle
+        : availableSheets[0] || sheetTitle;
+
+      const range = encodeURIComponent(`'${targetSheet}'!A1:Z500`);
+      const valRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${targetId}/values/${range}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (valRes.ok) {
+        const valData = await valRes.json();
+        const rawValues: any[][] = valData.values || [];
+
+        if (rawValues.length > 0) {
+          const headers = rawValues[0].map((h: any) => String(h || ''));
+          const rows = rawValues.slice(1);
+          return {
+            sheetTitle: targetSheet,
+            headers,
+            rows,
+            totalRows: rows.length,
+            fetchedAt: new Date().toLocaleTimeString('th-TH'),
+            source: 'google_api',
+            spreadsheetId: targetId,
+            spreadsheetTitle,
+            availableSheets,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Google Sheets API v4 fetch notice, attempting web stream:', e);
+    }
+  }
+
+  // 2. Second Attempt: Google Visualization Query API (Live Web Stream)
+  try {
+    const gvizUrl = `https://docs.google.com/spreadsheets/d/${targetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(
+      sheetTitle
+    )}`;
+    const gvizRes = await fetch(gvizUrl);
+    if (gvizRes.ok) {
+      const gvizText = await gvizRes.text();
+      if (gvizText.includes('google.visualization.Query.setResponse')) {
+        const { headers, rows } = parseGvizResponse(gvizText);
+        return {
+          sheetTitle,
+          headers,
+          rows,
+          totalRows: rows.length,
+          fetchedAt: new Date().toLocaleTimeString('th-TH'),
+          source: 'gviz_web',
+          spreadsheetId: targetId,
+          spreadsheetTitle: spreadsheetTitle || `Google Sheet (${targetId.slice(0, 8)}...)`,
+          availableSheets,
+        };
+      }
+    }
+  } catch (e) {
+    console.warn('GViz web stream fetch notice, trying CSV export:', e);
+  }
+
+  // 3. Third Attempt: Direct CSV export endpoint
+  try {
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${targetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(
+      sheetTitle
+    )}`;
+    const csvRes = await fetch(csvUrl);
+    if (csvRes.ok) {
+      const csvText = await csvRes.text();
+      const allRows = parseCsvText(csvText);
+      if (allRows.length > 0) {
+        const headers = allRows[0];
+        const rows = allRows.slice(1);
+        return {
+          sheetTitle,
+          headers,
+          rows,
+          totalRows: rows.length,
+          fetchedAt: new Date().toLocaleTimeString('th-TH'),
+          source: 'csv_stream',
+          spreadsheetId: targetId,
+          spreadsheetTitle: spreadsheetTitle || `Google Sheet (${targetId.slice(0, 8)}...)`,
+          availableSheets,
+        };
+      }
+    }
+  } catch (e) {
+    console.warn('CSV export endpoint error:', e);
+  }
+
+  throw new Error(
+    `ไม่สามารถดึงข้อมูลจาก Google Sheets (ID: ${targetId}) ได้ในขณะนี้ กรุณาตรวจสอบสิทธิ์การแชร์ของชีต หรือคลิก "เชื่อมต่อบัญชี Google" อีกครั้ง`
+  );
+};
+
+/**
+ * Helper to convert fetched rows into SparePart items
+ */
+export const parseSparePartsFromRows = (
+  headers: string[],
+  rows: (string | number)[][]
+): SparePart[] => {
+  const findIdx = (keywords: string[]) =>
+    headers.findIndex((h) => keywords.some((k) => h.toLowerCase().includes(k.toLowerCase())));
+
+  const codeIdx = findIdx(['รหัส', 'code', 'part code']);
+  const nameIdx = findIdx(['ชื่อ', 'name', 'รายการ']);
+  const catIdx = findIdx(['หมวด', 'category']);
+  const brandIdx = findIdx(['ยี่ห้อ', 'brand']);
+  const modelIdx = findIdx(['รุ่น', 'model']);
+  const unitIdx = findIdx(['หน่วย', 'unit']);
+  const qtyIdx = findIdx(['คงเหลือ', 'qty', 'จำนวน']);
+  const minIdx = findIdx(['ขั้นต่ำ', 'min']);
+  const costIdx = findIdx(['ต้นทุน', 'cost']);
+  const sellIdx = findIdx(['ขาย', 'sell', 'ราคาขาย']);
+  const rackIdx = findIdx(['ตำแหน่ง', 'rack', 'จัดเก็บ']);
+  const supIdx = findIdx(['ผู้จำหน่าย', 'supplier']);
+
+  return rows
+    .filter((r) => r.length > 0 && String(r[codeIdx >= 0 ? codeIdx : 0] || r[nameIdx >= 0 ? nameIdx : 1] || '').trim())
+    .map((r, index) => {
+      const partCode = String(codeIdx >= 0 ? r[codeIdx] : r[0] || `PART-${index + 1}`).trim();
+      const name = String(nameIdx >= 0 ? r[nameIdx] : r[1] || `อะไหล่ ${partCode}`).trim();
+      const category = (catIdx >= 0 ? String(r[catIdx] || 'ทั่วไป') : 'ทั่วไป') as any;
+      const brand = brandIdx >= 0 ? String(r[brandIdx] || 'OEM') : 'OEM';
+      const compatibleModels = modelIdx >= 0 ? String(r[modelIdx] || 'รถยนต์ทั่วไป') : 'รถยนต์ทั่วไป';
+      const unit = unitIdx >= 0 ? String(r[unitIdx] || 'ชิ้น') : 'ชิ้น';
+      const stockQty = Number(qtyIdx >= 0 ? r[qtyIdx] : r[6]) || 0;
+      const minStockQty = Number(minIdx >= 0 ? r[minIdx] : r[7]) || 1;
+      const costPrice = Number(costIdx >= 0 ? r[costIdx] : r[9]) || 0;
+      const sellPrice = Number(sellIdx >= 0 ? r[sellIdx] : r[10]) || Math.round(costPrice * 1.3);
+      const locationRack = rackIdx >= 0 ? String(r[rackIdx] || '') : '';
+      const supplier = supIdx >= 0 ? String(r[supIdx] || '') : '';
+
+      return {
+        id: `part-sheet-${index + 1}-${Date.now().toString().slice(-4)}`,
+        partCode,
+        name,
+        category,
+        brand,
+        compatibleModels,
+        unit,
+        stockQty,
+        minStockQty,
+        costPrice,
+        sellPrice,
+        locationRack,
+        supplier,
+        lastRestockedAt: new Date().toISOString(),
+      };
+    });
+};
+
+/**
+ * Helper to convert fetched rows into Customer items (grouped by phone/ID)
+ */
+export const parseCustomersFromRows = (
+  headers: string[],
+  rows: (string | number)[][]
+): Customer[] => {
+  const findIdx = (keywords: string[]) =>
+    headers.findIndex((h) => keywords.some((k) => h.toLowerCase().includes(k.toLowerCase())));
+
+  const idIdx = findIdx(['รหัสลูกค้า', 'id', 'customer id']);
+  const nameIdx = findIdx(['ชื่อ', 'name', 'ลูกค้า']);
+  const phoneIdx = findIdx(['เบอร์', 'โทร', 'phone']);
+  const lineIdx = findIdx(['line', 'ไลน์']);
+  const emailIdx = findIdx(['อีเมล', 'email']);
+  const addressIdx = findIdx(['ที่อยู่', 'address']);
+  const plateIdx = findIdx(['ทะเบียน', 'plate', 'license']);
+  const brandIdx = findIdx(['ยี่ห้อ', 'brand']);
+  const modelIdx = findIdx(['รุ่น', 'model']);
+  const yearIdx = findIdx(['ปี', 'year']);
+  const colorIdx = findIdx(['สี', 'color']);
+  const mileageIdx = findIdx(['ไมล์', 'mileage']);
+  const lastDateIdx = findIdx(['วันที่เข้า', 'ล่าสุด', 'service date']);
+  const visitsIdx = findIdx(['จำนวนครั้ง', 'ครั้ง', 'visits']);
+  const spentIdx = findIdx(['ใช้จ่ายสะสม', 'ยอดใช้จ่าย', 'spent']);
+
+  const customerMap = new Map<string, Customer>();
+
+  rows.forEach((r, index) => {
+    if (!r || r.length === 0) return;
+    const name = String(nameIdx >= 0 ? r[nameIdx] : r[1] || '').trim();
+    const phone = String(phoneIdx >= 0 ? r[phoneIdx] : r[2] || '').trim();
+    if (!name && !phone) return;
+
+    const key = (phone || name).toLowerCase();
+    const custId = String(idIdx >= 0 && r[idIdx] ? r[idIdx] : `cust-${index + 1}`).trim();
+    const lineId = lineIdx >= 0 ? String(r[lineIdx] || '').trim() : '';
+    const email = emailIdx >= 0 ? String(r[emailIdx] || '').trim() : '';
+    const address = addressIdx >= 0 ? String(r[addressIdx] || '').trim() : '';
+    const plate = plateIdx >= 0 ? String(r[plateIdx] || '').trim() : '';
+    const brand = brandIdx >= 0 ? String(r[brandIdx] || 'Toyota').trim() : 'Toyota';
+    const model = modelIdx >= 0 ? String(r[modelIdx] || 'Corolla').trim() : 'Corolla';
+    const year = yearIdx >= 0 ? String(r[yearIdx] || '2020').trim() : '2020';
+    const color = colorIdx >= 0 ? String(r[colorIdx] || 'ขาว').trim() : 'ขาว';
+    const mileage = Number(mileageIdx >= 0 ? r[mileageIdx] : 50000) || 50000;
+    const lastServiceDate = lastDateIdx >= 0 ? String(r[lastDateIdx] || new Date().toISOString().slice(0, 10)) : new Date().toISOString().slice(0, 10);
+    const visits = Number(visitsIdx >= 0 ? r[visitsIdx] : 1) || 1;
+    const spent = Number(spentIdx >= 0 ? r[spentIdx] : 0) || 0;
+
+    const newVehicle = plate
+      ? {
+          id: `veh-${index + 1}-${plate.replace(/[^a-zA-Z0-9]/g, '')}`,
+          licensePlate: plate,
+          brand,
+          model,
+          year,
+          color,
+          lastMileage: mileage,
+          lastServiceDate,
+        }
+      : null;
+
+    if (customerMap.has(key)) {
+      const existing = customerMap.get(key)!;
+      if (newVehicle && !existing.vehicles.some((v) => v.licensePlate === newVehicle.licensePlate)) {
+        existing.vehicles.push(newVehicle);
+      }
+      existing.totalVisits = Math.max(existing.totalVisits, visits);
+      existing.totalSpent = Math.max(existing.totalSpent, spent);
+      if (address && !existing.address) existing.address = address;
+      if (lineId && !existing.lineId) existing.lineId = lineId;
+    } else {
+      customerMap.set(key, {
+        id: custId || `cust-sheet-${index + 1}`,
+        name: name || `ลูกค้า ${phone}`,
+        phone: phone || '080-000-0000',
+        lineId,
+        email,
+        address: address || 'นำเข้าจาก Google Sheets',
+        vehicles: newVehicle ? [newVehicle] : [],
+        totalSpent: spent,
+        totalVisits: visits,
+        createdAt: new Date().toISOString(),
+      });
+    }
+  });
+
+  return Array.from(customerMap.values());
+};
+
+/**
+ * Helper to convert fetched rows into JobOrder items
+ */
+export const parseJobOrdersFromRows = (
+  headers: string[],
+  rows: (string | number)[][]
+): JobOrder[] => {
+  const findIdx = (keywords: string[]) =>
+    headers.findIndex((h) => keywords.some((k) => h.toLowerCase().includes(k.toLowerCase())));
+
+  const jobNoIdx = findIdx(['เลขที่', 'job no', 'jobno', 'ใบสั่งซ่อม']);
+  const dateIdx = findIdx(['วันที่รับรถ', 'วันที่', 'date']);
+  const plateIdx = findIdx(['ทะเบียน', 'plate', 'license']);
+  const carIdx = findIdx(['ยี่ห้อ / รุ่น', 'ยี่ห้อ', 'รุ่น', 'brand', 'model']);
+  const nameIdx = findIdx(['ชื่อลูกค้า', 'ลูกค้า', 'customer']);
+  const phoneIdx = findIdx(['เบอร์โทร', 'phone', 'โทร']);
+  const issueIdx = findIdx(['อาการ', 'งานที่ทำ', 'issue']);
+  const notesIdx = findIdx(['บันทึกช่าง', 'notes', 'ช่างเทคนิค']);
+  const mechanicIdx = findIdx(['ช่างผู้รับผิดชอบ', 'ช่าง', 'mechanic']);
+  const bayIdx = findIdx(['ช่องซ่อม', 'bay']);
+  const statusIdx = findIdx(['สถานะงาน', 'สถานะ']);
+  const laborIdx = findIdx(['ค่าแรง', 'labor']);
+  const discountIdx = findIdx(['ส่วนลด', 'discount']);
+  const totalIdx = findIdx(['ยอดรวม', 'สุทธิ', 'total']);
+  const payStatusIdx = findIdx(['สถานะชำระ', 'ชำระเงิน']);
+  const estDateIdx = findIdx(['กำหนดส่งมอบ', 'ส่งมอบ']);
+
+  const seenJobNos = new Set<string>();
+
+  return rows
+    .filter((r) => r.length > 0 && String(r[jobNoIdx >= 0 ? jobNoIdx : 0] || r[plateIdx >= 0 ? plateIdx : 2] || '').trim())
+    .map((r, index) => {
+      let jobNo = String(jobNoIdx >= 0 ? r[jobNoIdx] : r[0] || `JOB-${index + 1}`).trim();
+      if (!jobNo) jobNo = `JOB-SHEET-${index + 1}`;
+      
+      const uniqueSuffix = seenJobNos.has(jobNo) ? `-${index + 1}` : '';
+      seenJobNos.add(jobNo);
+
+      const licensePlate = String(plateIdx >= 0 ? r[plateIdx] : r[2] || '').trim();
+      const carText = String(carIdx >= 0 ? r[carIdx] : r[3] || 'Toyota').trim();
+      const partsOfCar = carText.split(' ');
+      const carBrand = partsOfCar[0] || 'Toyota';
+      const carModel = partsOfCar.slice(1).join(' ') || carText;
+      const customerName = String(nameIdx >= 0 ? r[nameIdx] : r[4] || 'ลูกค้าทั่วไป').trim();
+      const customerPhone = String(phoneIdx >= 0 ? r[phoneIdx] : r[5] || '').trim();
+      const issueDescription = String(issueIdx >= 0 ? r[issueIdx] : r[6] || 'ตรวจเช็คตามระยะ').trim();
+      const technicianNotes = notesIdx >= 0 ? String(r[notesIdx] || '') : '';
+      const mechanicName = mechanicIdx >= 0 ? String(r[mechanicIdx] || 'ช่างสงกรานต์') : 'ช่างสงกรานต์';
+
+      const bayText = bayIdx >= 0 ? String(r[bayIdx] || '1') : '1';
+      const bayMatch = bayText.match(/\d+/);
+      const bayNumber = bayMatch ? parseInt(bayMatch[0], 10) : 1;
+
+      const rawStatus = statusIdx >= 0 ? String(r[statusIdx] || '') : '';
+      let status: JobStatus = 'in_progress';
+      if (rawStatus.includes('ปิดใบซ่อม') || rawStatus.includes('closed')) {
+        status = 'closed';
+      } else if (rawStatus.includes('ส่งมอบ') || rawStatus.includes('delivered')) {
+        status = 'delivered';
+      } else if (rawStatus.includes('ซ่อมเสร็จ') || rawStatus.includes('รอส่งมอบ') || rawStatus.includes('completed')) {
+        status = 'completed';
+      } else if (rawStatus.includes('รออะไหล่') || rawStatus.includes('waiting')) {
+        status = 'waiting_parts';
+      } else if (rawStatus.includes('ตรวจเช็ค') || rawStatus.includes('inspect')) {
+        status = 'inspecting';
+      } else if (rawStatus.includes('QC') || rawStatus.includes('ทดสอบ')) {
+        status = 'qc';
+      } else if (rawStatus.includes('รับรถ') || rawStatus.includes('รอดำเนินการ') || rawStatus.includes('pending')) {
+        status = 'pending';
+      }
+
+      const laborFee = Number(laborIdx >= 0 ? r[laborIdx] : 0) || 0;
+      const discount = Number(discountIdx >= 0 ? r[discountIdx] : 0) || 0;
+      const totalAmount = Number(totalIdx >= 0 ? r[totalIdx] : 0) || 0;
+
+      const rawPayStatus = payStatusIdx >= 0 ? String(r[payStatusIdx] || '') : '';
+      let paymentStatus: PaymentStatus = 'unpaid';
+      if (rawPayStatus.includes('ชำระครบ') || rawPayStatus.includes('paid')) {
+        paymentStatus = 'paid';
+      } else if (rawPayStatus.includes('มัดจำ') || rawPayStatus.includes('deposit')) {
+        paymentStatus = 'deposit';
+      }
+
+      const receivedDate = dateIdx >= 0 ? String(r[dateIdx] || new Date().toISOString()) : new Date().toISOString();
+      const estimatedCompletionDate = estDateIdx >= 0 ? String(r[estDateIdx] || '') : '';
+
+      return {
+        id: `job-sheet-${jobNo.replace(/[^a-zA-Z0-9]/g, '-')}${uniqueSuffix}`,
+        jobNo,
+        customerName,
+        customerPhone,
+        licensePlate,
+        carBrand,
+        carModel,
+        mileage: 45000,
+        issueDescription,
+        technicianNotes,
+        mechanicName,
+        bayNumber: Math.min(3, Math.max(1, bayNumber)),
+        status,
+        priority: 'normal' as const,
+        partsUsed: [],
+        laborFee,
+        discount,
+        vatPercent: 7,
+        totalAmount,
+        paymentStatus,
+        paymentMethod: 'transfer' as const,
+        paidAmount: paymentStatus === 'paid' ? totalAmount : 0,
+        receivedDate,
+        estimatedCompletionDate,
+        createdAt: receivedDate && !isNaN(new Date(receivedDate).getTime()) ? new Date(receivedDate).toISOString() : new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    });
+};
+
+export interface AllSheetsPullResult {
+  parts: SparePart[];
+  customers: Customer[];
+  jobOrders: JobOrder[];
+  rawTabs: { [tabName: string]: FetchedSheetData };
+  summary: {
+    partsCount: number;
+    customersCount: number;
+    jobsCount: number;
+    fetchedAt: string;
+  };
+}
+
+/**
+ * High-performance fetch of all primary sheets in one batch
+ */
+export const fetchAllSheetsDataFromGoogle = async (
+  spreadsheetId: string = TARGET_SPREADSHEET_ID
+): Promise<AllSheetsPullResult> => {
+  const targetId = spreadsheetId || TARGET_SPREADSHEET_ID;
+  const rawTabs: { [tabName: string]: FetchedSheetData } = {};
+
+  let parts: SparePart[] = [];
+  let customers: Customer[] = [];
+  let jobOrders: JobOrder[] = [];
+
+  // 1. Fetch Parts (Try "คลังสต็อกอะไหล่" first, then fallback "Sheet1")
+  try {
+    const partsData = await fetchSheetDataFromGoogle(targetId, 'คลังสต็อกอะไหล่');
+    rawTabs['คลังสต็อกอะไหล่'] = partsData;
+    parts = parseSparePartsFromRows(partsData.headers, partsData.rows);
+  } catch (err) {
+    console.warn('Fallback to Sheet1 for parts:', err);
+    try {
+      const sheet1Data = await fetchSheetDataFromGoogle(targetId, 'Sheet1');
+      rawTabs['Sheet1'] = sheet1Data;
+      parts = parseSparePartsFromRows(sheet1Data.headers, sheet1Data.rows);
+    } catch (e2) {
+      console.warn('Could not fetch parts from Sheet1 either:', e2);
+    }
+  }
+
+  // 2. Fetch Customers ("ประวัติลูกค้าและรถยนต์")
+  try {
+    const custData = await fetchSheetDataFromGoogle(targetId, 'ประวัติลูกค้าและรถยนต์');
+    rawTabs['ประวัติลูกค้าและรถยนต์'] = custData;
+    customers = parseCustomersFromRows(custData.headers, custData.rows);
+  } catch (err) {
+    console.warn('Could not fetch customers tab:', err);
+  }
+
+  // 3. Fetch Jobs ("ใบสั่งซ่อมและสถานะ")
+  try {
+    const jobsData = await fetchSheetDataFromGoogle(targetId, 'ใบสั่งซ่อมและสถานะ');
+    rawTabs['ใบสั่งซ่อมและสถานะ'] = jobsData;
+    jobOrders = parseJobOrdersFromRows(jobsData.headers, jobsData.rows);
+  } catch (err) {
+    console.warn('Could not fetch job orders tab:', err);
+  }
+
+  return {
+    parts,
+    customers,
+    jobOrders,
+    rawTabs,
+    summary: {
+      partsCount: parts.length,
+      customersCount: customers.length,
+      jobsCount: jobOrders.length,
+      fetchedAt: new Date().toLocaleTimeString('th-TH'),
+    },
+  };
+};
+

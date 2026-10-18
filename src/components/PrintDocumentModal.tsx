@@ -428,11 +428,20 @@ export const PrintDocumentModal: React.FC<PrintDocumentModalProps> = ({
                       </tr>
                     ))}
                     
-                    {/* Labor Row */}
+                    {/* Labor Services Row - Consolidated Single Line with Summary Description */}
                     {(job.laborFee || 0) > 0 && (
                       <tr>
                         <td className="px-3 py-2 text-center">{(job.partsUsed || []).length + 1}</td>
-                        <td className="px-3 py-2 font-semibold">ค่าแรงช่างและบริการซ่อมบำรุงตรวจเช็ค</td>
+                        <td className="px-3 py-2">
+                          <span className="font-semibold text-slate-800">ค่าแรงช่างและบริการซ่อมบำรุง</span>
+                          <span className="text-[11px] text-slate-600 block mt-0.5">
+                            {job.laborDescription?.trim()
+                              ? job.laborDescription.trim()
+                              : job.laborDetails && job.laborDetails.length > 0
+                              ? job.laborDetails.map((item) => item.title).join(', ')
+                              : 'บริการตรวจเช็คและซ่อมบำรุงตามมาตรฐาน'}
+                          </span>
+                        </td>
                         <td className="px-3 py-2 text-center font-mono">1</td>
                         <td className="px-3 py-2 text-right font-mono">{(job.laborFee || 0).toLocaleString()}</td>
                         <td className="px-3 py-2 text-right font-semibold font-mono">{(job.laborFee || 0).toLocaleString()}</td>
@@ -442,7 +451,9 @@ export const PrintDocumentModal: React.FC<PrintDocumentModalProps> = ({
                     {/* Other Fee Row */}
                     {(job.otherFee || 0) > 0 && (
                       <tr>
-                        <td className="px-3 py-2 text-center">{(job.partsUsed || []).length + ((job.laborFee || 0) > 0 ? 2 : 1)}</td>
+                        <td className="px-3 py-2 text-center">
+                          {(job.partsUsed || []).length + ((job.laborFee || 0) > 0 ? 1 : 0) + 1}
+                        </td>
                         <td className="px-3 py-2 font-semibold">
                           ค่าบริการอื่นๆ / ค่าซับนอก {job.otherFeeDescription ? `(${job.otherFeeDescription})` : ''}
                         </td>

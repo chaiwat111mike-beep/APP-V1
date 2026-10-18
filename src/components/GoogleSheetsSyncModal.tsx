@@ -24,6 +24,10 @@ import {
   Code,
   Wrench,
   Radio,
+  ArrowDownCircle,
+  FolderDown,
+  Layers,
+  Eye,
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import {
@@ -50,12 +54,16 @@ import {
   getStoredGoogleEmail,
   clearStoredGoogleToken,
   testGoogleSheetsConnection,
+  fetchSheetDataFromGoogle,
+  parseSparePartsFromRows,
+  parseCustomersFromRows,
+  FetchedSheetData,
 } from '../services/googleSheetsService';
 
 interface GoogleSheetsSyncModalProps {
   isOpen: boolean;
   onClose: () => void;
-  targetTab?: 'inventory' | 'customers' | 'jobs' | 'all';
+  targetTab?: 'fetch' | 'inventory' | 'customers' | 'jobs' | 'all';
 }
 
 export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
@@ -72,10 +80,12 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     googleSheetsSyncStatus,
     setGoogleSheetId,
     toggleGoogleSheetAutoSync,
+    importSpareParts,
+    importCustomers,
   } = useGarage();
 
-  const [activeSubTab, setActiveSubTab] = useState<'inventory' | 'jobs' | 'customers' | 'script'>(
-    targetTab === 'customers' ? 'customers' : targetTab === 'jobs' ? 'jobs' : 'inventory'
+  const [activeSubTab, setActiveSubTab] = useState<'fetch' | 'inventory' | 'jobs' | 'customers' | 'script'>(
+    targetTab === 'customers' ? 'customers' : targetTab === 'jobs' ? 'jobs' : targetTab === 'inventory' ? 'inventory' : 'fetch'
   );
 
   const [inventorySheetId, setInventorySheetId] = useState<string | null>(TARGET_SPREADSHEET_ID);
@@ -105,6 +115,13 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
   const [showDataTable, setShowDataTable] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Fetch / Live Google Sheet Viewer states
+  const [isFetchingSheet, setIsFetchingSheet] = useState(false);
+  const [selectedFetchTabName, setSelectedFetchTabName] = useState<string>('คลังสต็อกอะไหล่');
+  const [fetchedSheetData, setFetchedSheetData] = useState<FetchedSheetData | null>(null);
+  const [searchFetchTerm, setSearchFetchTerm] = useState('');
+  const [importFeedback, setImportFeedback] = useState<string | null>(null);
+
   // Synchronize state when opened
   useEffect(() => {
     if (isOpen) {
@@ -127,6 +144,11 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
       const token = getStoredGoogleToken();
       if (token) {
         handleTestConnection(primaryId);
+      }
+
+      // If opening in fetch mode, auto fetch
+      if (activeSubTab === 'fetch' && !fetchedSheetData) {
+        handleFetchLiveSheet(primaryId, selectedFetchTabName);
       }
     }
   }, [isOpen, activeSubTab]);
@@ -298,6 +320,72 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
       });
     } finally {
       setIsTesting(false);
+    }
+  };
+
+  // 2.1 Action: Fetch Live Data Directly from Google Sheets
+  const handleFetchLiveSheet = async (
+    targetSpreadsheetId?: string,
+    sheetTab?: string
+  ) => {
+    const idToUse = targetSpreadsheetId || currentSheetId || TARGET_SPREADSHEET_ID;
+    const tabToUse = sheetTab || selectedFetchTabName || 'คลังสต็อกอะไหล่';
+
+    setIsFetchingSheet(true);
+    setErrorMessage(null);
+    setImportFeedback(null);
+    try {
+      const data = await fetchSheetDataFromGoogle(idToUse, tabToUse);
+      setFetchedSheetData(data);
+      setSelectedFetchTabName(data.sheetTitle);
+      setSuccessMessage(
+        `ดึงข้อมูลสดจาก Google Sheet (${data.sheetTitle}) สำเร็จแล้ว! พบ ${data.totalRows} แถว`
+      );
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (err: any) {
+      console.warn('Fetch live sheet error:', err);
+      setErrorMessage(
+        err?.message || 'ไม่สามารถดึงข้อมูลจาก Google Sheets ได้ กรุณาตรวจสอบสิทธิ์การแชร์หรือลองใหม่อีกครั้ง'
+      );
+    } finally {
+      setIsFetchingSheet(false);
+    }
+  };
+
+  // 2.2 Action: Import Fetched Google Sheet Rows into App State
+  const handleImportFetchedData = () => {
+    if (!fetchedSheetData || fetchedSheetData.rows.length === 0) {
+      setErrorMessage('ไม่มีข้อมูลสำหรับนำเข้า');
+      return;
+    }
+
+    try {
+      const tab = (fetchedSheetData.sheetTitle || '').toLowerCase();
+      if (tab.includes('สต็อก') || tab.includes('อะไหล่') || tab.includes('inventory')) {
+        const parts = parseSparePartsFromRows(fetchedSheetData.headers, fetchedSheetData.rows);
+        if (parts.length === 0) {
+          setErrorMessage('ไม่สามารถแปลงข้อมูลเป็นรายการอะไหล่ได้ กรุณาตรวจสอบหัวตารางในชีต');
+          return;
+        }
+        importSpareParts(parts, 'merge');
+        setImportFeedback(`✅ นำเข้าและอัปเดตสต็อกอะไหล่สำเร็จจำนวน ${parts.length} รายการ!`);
+        setSuccessMessage(`นำเข้าสต็อกอะไหล่จาก Google Sheets ${parts.length} รายการเรียบร้อยแล้ว`);
+        setTimeout(() => setSuccessMessage(null), 5000);
+      } else if (tab.includes('ลูกค้า') || tab.includes('รถ') || tab.includes('customer')) {
+        const custs = parseCustomersFromRows(fetchedSheetData.headers, fetchedSheetData.rows);
+        if (custs.length === 0) {
+          setErrorMessage('ไม่สามารถแปลงข้อมูลเป็นข้อมูลลูกค้าได้ กรุณาตรวจสอบหัวตารางในชีต');
+          return;
+        }
+        importCustomers(custs, 'merge');
+        setImportFeedback(`✅ นำเข้าและอัปเดตข้อมูลลูกค้าสำเร็จจำนวน ${custs.length} รายการ!`);
+        setSuccessMessage(`นำเข้าข้อมูลลูกค้าจาก Google Sheets ${custs.length} รายการเรียบร้อยแล้ว`);
+        setTimeout(() => setSuccessMessage(null), 5000);
+      } else {
+        setImportFeedback(`ดึงข้อมูล ${fetchedSheetData.totalRows} แถวแสดงผลเรียบร้อยแล้ว (แผ่นงาน: ${fetchedSheetData.sheetTitle})`);
+      }
+    } catch (err: any) {
+      setErrorMessage(`เกิดข้อผิดพลาดในการนำเข้า: ${err?.message || err}`);
     }
   };
 
@@ -551,6 +639,27 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
         <div className="flex border-b border-[#2D3135] bg-[#121417] px-4 sm:px-6 pt-3 gap-2 overflow-x-auto">
           <button
             onClick={() => {
+              setActiveSubTab('fetch');
+              setShowDataTable(false);
+              if (!fetchedSheetData) {
+                handleFetchLiveSheet(currentSheetId, selectedFetchTabName);
+              }
+            }}
+            className={`pb-3 px-3 sm:px-4 text-xs font-bold transition-all border-b-2 flex items-center gap-2 whitespace-nowrap ${
+              activeSubTab === 'fetch'
+                ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10 rounded-t-lg'
+                : 'border-transparent text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <ArrowDownCircle className="w-4 h-4 text-emerald-400" />
+            <span>📥 ดึงข้อมูลใน Google Sheets มาแสดง (Live Data)</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-500/40">
+              ใหม่
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
               setActiveSubTab('inventory');
               setShowDataTable(false);
             }}
@@ -746,6 +855,213 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
                 </div>
               </div>
             </div>
+          ) : activeSubTab === 'fetch' ? (
+            <div className="space-y-4">
+              {/* Fetch Control Bar */}
+              <div className="p-4 sm:p-5 rounded-xl bg-[#0F1113] border border-[#2D3135] space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                        <ArrowDownCircle className="w-5 h-5 text-emerald-400" />
+                        <span>ดึงข้อมูลสดจาก Google Sheets (Live Data Pull & Viewer)</span>
+                      </h3>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono font-bold">
+                        v2.0 LIVE
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-400">
+                      ดึงข้อมูลจริงจากสเปรดชีต ID:{' '}
+                      <strong className="text-orange-400 font-mono select-all">{currentSheetId}</strong>{' '}
+                      มาแสดงผลบนหน้าจอทันที
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {currentSheetUrl && (
+                      <a
+                        href={currentSheetUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-2 rounded-xl bg-[#16191D] hover:bg-[#1E2329] border border-[#2D3135] text-gray-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>เปิดไฟล์ Sheet จริง</span>
+                        <ExternalLink className="w-3 h-3 text-gray-400" />
+                      </a>
+                    )}
+
+                    <button
+                      type="button"
+                      disabled={isFetchingSheet}
+                      onClick={() => handleFetchLiveSheet(currentSheetId, selectedFetchTabName)}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isFetchingSheet ? 'animate-spin' : ''}`} />
+                      <span>{isFetchingSheet ? 'กำลังดึงข้อมูลจากชีต...' : '🔄 ดึงข้อมูลสดเดี๋ยวนี้'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sheet Tabs selector pills */}
+                <div className="pt-3 border-t border-[#2D3135] flex items-center gap-2 flex-wrap">
+                  <span className="text-gray-400 text-xs font-medium">เลือกแผ่นงาน (Sheet Tab):</span>
+                  {[
+                    { id: 'คลังสต็อกอะไหล่', label: '📦 คลังสต็อกอะไหล่' },
+                    { id: 'ใบสั่งซ่อมและสถานะ', label: '📋 ใบสั่งซ่อมและสถานะ' },
+                    { id: 'ประวัติลูกค้าและรถยนต์', label: '👥 ประวัติลูกค้าและรถยนต์' },
+                    { id: 'สรุปภาพรวมและการเงิน', label: '📊 สรุปภาพรวมและการเงิน' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedFetchTabName(tab.id);
+                        handleFetchLiveSheet(currentSheetId, tab.id);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        selectedFetchTabName === tab.id
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-sm'
+                          : 'bg-[#16191D] text-gray-400 hover:text-gray-200 border border-[#2D3135]'
+                      }`}
+                    >
+                      <span>{tab.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Import Feedback notice */}
+              {importFeedback && (
+                <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="font-bold">{importFeedback}</span>
+                  </div>
+                  <button
+                    onClick={() => setImportFeedback(null)}
+                    className="text-gray-400 hover:text-white text-xs underline"
+                  >
+                    ปิด
+                  </button>
+                </div>
+              )}
+
+              {/* Fetched Data Summary & Actions */}
+              {fetchedSheetData && (
+                <div className="p-4 rounded-xl bg-[#16191D] border border-[#2D3135] space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                      <span className="text-xs px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-bold flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>พบข้อมูล: {fetchedSheetData.totalRows} แถว</span>
+                      </span>
+
+                      <span className="text-xs px-2.5 py-1 rounded-lg bg-[#0F1113] border border-[#2D3135] text-gray-300 font-mono">
+                        {fetchedSheetData.headers.length} คอลัมน์
+                      </span>
+
+                      <span className="text-xs text-gray-400">
+                        ดึงเมื่อ: <strong className="text-gray-200 font-mono">{fetchedSheetData.fetchedAt}</strong>
+                      </span>
+
+                      <span className="text-[11px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20">
+                        {fetchedSheetData.source === 'google_api' ? '⚡ Google Sheets API v4' : '🌐 Web Stream'}
+                      </span>
+                    </div>
+
+                    {/* Import into App Button */}
+                    {(selectedFetchTabName.includes('สต็อก') || selectedFetchTabName.includes('ลูกค้า')) && (
+                      <button
+                        type="button"
+                        onClick={handleImportFetchedData}
+                        className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-orange-500/20 active:scale-95 transition-all"
+                      >
+                        <FolderDown className="w-4 h-4" />
+                        <span>
+                          {selectedFetchTabName.includes('สต็อก')
+                            ? `📥 นำเข้าสต็อกอะไหล่ (${fetchedSheetData.totalRows} รายการ)`
+                            : `📥 นำเข้าข้อมูลลูกค้า (${fetchedSheetData.totalRows} ราย)`}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Live Search in Fetched Rows */}
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={searchFetchTerm}
+                      onChange={(e) => setSearchFetchTerm(e.target.value)}
+                      placeholder={`ค้นหาข้อความในตาราง Google Sheets (${selectedFetchTabName})...`}
+                      className="w-full pl-9 pr-4 py-2 rounded-xl bg-[#0F1113] border border-[#2D3135] text-white text-xs placeholder:text-gray-500 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  {/* Rendered Live Table from Google Sheets */}
+                  <div className="border border-[#2D3135] rounded-xl overflow-hidden bg-[#0A0C0E]">
+                    <div className="overflow-x-auto max-h-[460px]">
+                      <table className="w-full text-left border-collapse text-sm">
+                        <thead className="sticky top-0 z-10">
+                          <tr className="bg-[#161A1F] border-b-2 border-emerald-500/40 shadow-sm">
+                            <th className="p-3 text-gray-300 font-mono text-xs w-12 text-center bg-[#161A1F] font-bold">#</th>
+                            {fetchedSheetData.headers.map((h, i) => (
+                              <th key={i} className="p-3 text-white font-bold whitespace-nowrap bg-[#161A1F] text-xs uppercase tracking-wider">
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#22272E]">
+                          {fetchedSheetData.rows
+                            .filter((r) =>
+                              !searchFetchTerm.trim() ||
+                              r.some((cell) =>
+                                String(cell || '').toLowerCase().includes(searchFetchTerm.toLowerCase())
+                              )
+                            )
+                            .map((row, rIdx) => (
+                              <tr key={rIdx} className="hover:bg-[#1C222A] transition-colors even:bg-[#0E1114] odd:bg-[#121519]">
+                                <td className="p-3 text-gray-300 font-mono text-xs font-bold text-center bg-[#0F1113]/70">
+                                  {rIdx + 1}
+                                </td>
+                                {row.map((cell, cIdx) => (
+                                  <td key={cIdx} className="p-3 text-gray-100 whitespace-nowrap text-sm font-medium">
+                                    {String(cell || '-')}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* If not fetched yet and not loading */}
+              {!fetchedSheetData && !isFetchingSheet && (
+                <div className="p-8 rounded-xl bg-[#0F1113] border border-dashed border-[#2D3135] text-center space-y-3">
+                  <FileSpreadsheet className="w-10 h-10 text-emerald-400 mx-auto opacity-75" />
+                  <div className="space-y-1">
+                    <p className="font-bold text-gray-200 text-sm">พร้อมดึงข้อมูลจาก Google Sheets</p>
+                    <p className="text-gray-400 text-xs max-w-md mx-auto">
+                      คลิกปุ่มด้านล่างเพื่อดึงข้อมูลสดจากแผ่นงาน &ldquo;{selectedFetchTabName}&rdquo; ใน Google Sheet ของคุณมาแสดงผล
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleFetchLiveSheet(currentSheetId, selectedFetchTabName)}
+                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-95 transition-all"
+                  >
+                    <ArrowDownCircle className="w-4 h-4" />
+                    <span>ดึงข้อมูลแผ่นงาน &ldquo;{selectedFetchTabName}&rdquo; ตอนนี้</span>
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
           <div className="p-4 sm:p-5 rounded-xl bg-[#0F1113] border border-[#2D3135] space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -911,55 +1227,43 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
           </div>
           )}
 
-          {activeSubTab !== 'script' && (
+          {activeSubTab !== 'script' && activeSubTab !== 'fetch' && (
             <>
               {/* Quick Data Operations: Copy, Download, Sync */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {/* Tool 1: Copy All Data to Clipboard */}
-            <div className="p-3.5 rounded-xl bg-[#0F1113] border border-[#2D3135] flex flex-col justify-between space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Tool 1: Pull Live Data from Google Sheets */}
+            <div className="p-3.5 rounded-xl bg-[#0F1113] border border-emerald-500/30 flex flex-col justify-between space-y-3 shadow-sm">
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-white font-bold">
-                  <Copy className="w-4 h-4 text-emerald-400" />
-                  <span>คัดลอกข้อมูลทั้งหมด</span>
+                  <ArrowDownCircle className="w-4 h-4 text-emerald-400" />
+                  <span>ดึงข้อมูลชีตมาแสดง (Pull)</span>
                 </div>
                 <p className="text-[11px] text-gray-400">
-                  คัดลอกตาราง ({activeRows.length} แถว) เพื่อนำไปกด Ctrl+V วางลงใน Google Sheets ได้ทันที
+                  ดึงข้อมูลล่าสุดจริงจาก Google Sheets มาดูตารางและนำเข้าสู่ระบบ
                 </p>
               </div>
 
               <button
                 type="button"
-                onClick={handleCopyForSheets}
-                className="w-full py-2 px-3 rounded-lg bg-[#1C2025] hover:bg-[#282E35] border border-emerald-500/30 text-emerald-400 font-bold flex items-center justify-center gap-2 transition-all active:scale-95"
+                onClick={() => {
+                  const targetTabName =
+                    activeSubTab === 'inventory'
+                      ? 'คลังสต็อกอะไหล่'
+                      : activeSubTab === 'jobs'
+                      ? 'ใบสั่งซ่อมและสถานะ'
+                      : 'ประวัติลูกค้าและรถยนต์';
+                  setSelectedFetchTabName(targetTabName);
+                  setActiveSubTab('fetch');
+                  handleFetchLiveSheet(currentSheetId, targetTabName);
+                }}
+                className="w-full py-2 px-3 rounded-lg bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 font-bold flex items-center justify-center gap-2 transition-all active:scale-95 text-xs shadow-sm"
               >
-                <Copy className="w-3.5 h-3.5" />
-                <span>คัดลอกตารางข้อมูล</span>
+                <ArrowDownCircle className="w-3.5 h-3.5 text-emerald-400" />
+                <span>เปิดดูข้อมูลชีตสด</span>
               </button>
             </div>
 
-            {/* Tool 2: Download CSV */}
-            <div className="p-3.5 rounded-xl bg-[#0F1113] border border-[#2D3135] flex flex-col justify-between space-y-3">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-white font-bold">
-                  <Download className="w-4 h-4 text-sky-400" />
-                  <span>ดาวน์โหลด CSV</span>
-                </div>
-                <p className="text-[11px] text-gray-400">
-                  ส่งออกไฟล์ .CSV รองรับภาษาไทยสมบูรณ์ เปิดใน Excel หรือนำเข้า Google Sheets
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleDownloadCsv}
-                className="w-full py-2 px-3 rounded-lg bg-[#1C2025] hover:bg-[#282E35] border border-sky-500/30 text-sky-400 font-bold flex items-center justify-center gap-2 transition-all active:scale-95"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>ดาวน์โหลดไฟล์ .CSV</span>
-              </button>
-            </div>
-
-            {/* Tool 3: Synchronize Live */}
+            {/* Tool 2: Synchronize Live (Push) */}
             <div className="p-3.5 rounded-xl bg-[#0F1113] border border-[#2D3135] flex flex-col justify-between space-y-3">
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-white font-bold">
@@ -975,10 +1279,54 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
                 type="button"
                 disabled={isSyncing}
                 onClick={handleSyncNow}
-                className="w-full py-2 px-3 rounded-lg bg-[#1C2025] hover:bg-[#282E35] border border-orange-500/30 text-orange-400 font-bold flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+                className="w-full py-2 px-3 rounded-lg bg-[#1C2025] hover:bg-[#282E35] border border-orange-500/30 text-orange-400 font-bold flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 text-xs"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span>{isSyncing ? 'กำลังซิงค์ข้อมูล...' : 'ซิงค์ข้อมูลเดี๋ยวนี้'}</span>
+                <span>{isSyncing ? 'กำลังซิงค์...' : 'ซิงค์ข้อมูลเดี๋ยวนี้'}</span>
+              </button>
+            </div>
+
+            {/* Tool 3: Copy All Data to Clipboard */}
+            <div className="p-3.5 rounded-xl bg-[#0F1113] border border-[#2D3135] flex flex-col justify-between space-y-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-white font-bold">
+                  <Copy className="w-4 h-4 text-emerald-400" />
+                  <span>คัดลอกตาราง</span>
+                </div>
+                <p className="text-[11px] text-gray-400">
+                  คัดลอกตาราง ({activeRows.length} แถว) เพื่อนำไปกด Ctrl+V วางใน Google Sheets
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCopyForSheets}
+                className="w-full py-2 px-3 rounded-lg bg-[#1C2025] hover:bg-[#282E35] border border-emerald-500/30 text-emerald-400 font-bold flex items-center justify-center gap-2 transition-all active:scale-95 text-xs"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>คัดลอกข้อมูลทั้งหมด</span>
+              </button>
+            </div>
+
+            {/* Tool 4: Download CSV */}
+            <div className="p-3.5 rounded-xl bg-[#0F1113] border border-[#2D3135] flex flex-col justify-between space-y-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-white font-bold">
+                  <Download className="w-4 h-4 text-sky-400" />
+                  <span>ดาวน์โหลด CSV</span>
+                </div>
+                <p className="text-[11px] text-gray-400">
+                  ส่งออกไฟล์ .CSV รองรับภาษาไทยสมบูรณ์ เปิดใน Excel
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleDownloadCsv}
+                className="w-full py-2 px-3 rounded-lg bg-[#1C2025] hover:bg-[#282E35] border border-sky-500/30 text-sky-400 font-bold flex items-center justify-center gap-2 transition-all active:scale-95 text-xs"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>ดาวน์โหลด .CSV</span>
               </button>
             </div>
           </div>

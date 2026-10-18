@@ -65,8 +65,8 @@ export const LineNotificationModal: React.FC<LineNotificationModalProps> = ({
   const matchedCustomer = job
     ? customers.find(
         (c) =>
-          (job.customerPhone && c.phone.replace(/\D/g, '') === job.customerPhone.replace(/\D/g, '')) ||
-          c.name.trim().toLowerCase() === job.customerName.trim().toLowerCase()
+          (job.customerPhone && (c.phone || '').replace(/\D/g, '') === (job.customerPhone || '').replace(/\D/g, '')) ||
+          (!!c.name && !!job.customerName && (c.name || '').trim().toLowerCase() === (job.customerName || '').trim().toLowerCase())
       )
     : undefined;
 

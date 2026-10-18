@@ -16,7 +16,8 @@ export type JobStatus =
   | 'in_progress'     // กำลังซ่อม
   | 'qc'              // ทดสอบรถ / QC
   | 'completed'       // ซ่อมเสร็จสมบูรณ์
-  | 'delivered';      // ส่งมอบรถแล้ว / ปิดงาน
+  | 'delivered'       // ส่งมอบรถแล้ว
+  | 'closed';         // ปิดใบซ่อมเรียบร้อยสมบูรณ์ (Closed)
 
 export type JobPriority = 'normal' | 'urgent' | 'appointment';
 
@@ -41,6 +42,12 @@ export interface JobInspection {
   spareTirePresent: boolean;
   batteryHealth?: string;
   brakesCondition?: string;
+}
+
+export interface LaborServiceItem {
+  id: string;
+  title: string;
+  fee: number;
 }
 
 export interface JobOrder {
@@ -72,6 +79,8 @@ export interface JobOrder {
   
   partsUsed: JobPartItem[];
   laborFee: number;
+  laborDetails?: LaborServiceItem[]; // รายการค่าแรง/ค่าบริการแยกย่อยที่กำหนดเองได้
+  laborDescription?: string; // คำอธิบายค่าแรง/บริการเพิ่มเติม
   otherFee?: number;
   otherFeeDescription?: string;
   discount: number;
@@ -91,6 +100,8 @@ export interface JobOrder {
   updatedAt: string;
   completedAt?: string;
   deliveredAt?: string;
+  closedAt?: string; // วันเวลาปิดใบซ่อม
+  closeNotes?: string; // หมายเหตุการปิดใบซ่อม
 }
 
 export interface SparePart {
@@ -193,6 +204,8 @@ export interface GarageProfile {
   googleSheetsCustomersId?: string;
   googleSheetsJobOrdersId?: string;
   autoSyncGoogleSheets?: boolean;
+  standardLaborPresets?: LaborServiceItem[]; // รายการค่าแรง/ค่าบริการมาตรฐานที่อู่กำหนดเองได้
+  defaultLaborFee?: number; // ค่าแรงเริ่มต้นเริ่มต้นอัตโนมัติ
 }
 
 export interface GoogleSheetsSyncConfig {

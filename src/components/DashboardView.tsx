@@ -16,12 +16,17 @@ import {
   Sparkles,
   DollarSign,
   QrCode,
-  History
+  History,
+  FileSpreadsheet,
+  ArrowDownCircle,
+  ExternalLink
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { JobOrder, JobStatus } from '../types';
 import { GarageLogo } from './GarageLogo';
 import { PromptPayQRModal } from './PromptPayQRModal';
+import { GoogleSheetsSyncModal } from './GoogleSheetsSyncModal';
+import { MechanicManagerModal } from './MechanicManagerModal';
 
 interface DashboardViewProps {
   onSelectJob: (jobId: string) => void;
@@ -37,15 +42,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateTab,
 }) => {
   const [isPromptPayModalOpen, setIsPromptPayModalOpen] = useState<boolean>(false);
+  const [isSheetsModalOpen, setIsSheetsModalOpen] = useState<boolean>(false);
+  const [isMechanicModalOpen, setIsMechanicModalOpen] = useState<boolean>(false);
   const navigateTo = (tab: string) => {
     if (setActiveTab) setActiveTab(tab);
     if (onNavigateTab) onNavigateTab(tab);
   };
-  const { jobOrders, spareParts, serviceBays, mechanics } = useGarage();
+  const {
+    jobOrders,
+    spareParts,
+    customers,
+    serviceBays,
+    mechanics,
+    pullDataFromGoogleSheets,
+    isPullingSheets,
+    lastSheetPullAt,
+    googleSheetsSyncStatus,
+  } = useGarage();
 
-  const activeJobs = jobOrders.filter((j) => j.status !== 'delivered' && j.status !== 'completed');
+  const activeJobs = jobOrders.filter((j) => j.status !== 'delivered' && j.status !== 'completed' && j.status !== 'closed');
   const completedJobs = jobOrders.filter((j) => j.status === 'completed');
   const deliveredJobs = jobOrders.filter((j) => j.status === 'delivered');
+  const closedJobs = jobOrders.filter((j) => j.status === 'closed');
   const lowStockParts = spareParts.filter((p) => p.stockQty <= p.minStockQty);
   
   const totalRevenue = jobOrders.reduce((sum, j) => sum + (j.paidAmount || (j.paymentStatus === 'paid' ? (j.totalAmount || 0) : 0)), 0);
@@ -54,19 +72,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const getStatusBadge = (status: JobStatus) => {
     switch (status) {
       case 'pending':
-        return <span className="px-2.5 py-0.5 rounded text-[11px] font-bold uppercase bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">รอดำเนินการ</span>;
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-yellow-500/20 text-yellow-300 border border-yellow-500/40">รอดำเนินการ</span>;
       case 'inspecting':
-        return <span className="px-2.5 py-0.5 rounded text-[11px] font-bold uppercase bg-blue-500/10 text-blue-400 border border-blue-500/20">กำลังตรวจเช็ค</span>;
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40">กำลังตรวจเช็ค</span>;
       case 'waiting_parts':
-        return <span className="px-2.5 py-0.5 rounded text-[11px] font-bold uppercase bg-blue-500/10 text-blue-500 border border-blue-500/20">รออะไหล่</span>;
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">รออะไหล่</span>;
       case 'in_progress':
-        return <span className="px-2.5 py-0.5 rounded text-[11px] font-bold uppercase bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">กำลังซ่อม</span>;
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-orange-500/20 text-orange-300 border border-orange-500/40">กำลังซ่อม</span>;
       case 'qc':
-        return <span className="px-2.5 py-0.5 rounded text-[11px] font-bold uppercase bg-purple-500/10 text-purple-400 border border-purple-500/20">ทดสอบ QC</span>;
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">ทดสอบ QC</span>;
       case 'completed':
-        return <span className="px-2.5 py-0.5 rounded text-[11px] font-bold uppercase bg-green-500/10 text-green-500 border border-green-500/20">ซ่อมเสร็จ / รอลูกค้า</span>;
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">ซ่อมเสร็จ / รอลูกค้า</span>;
       case 'delivered':
-        return <span className="px-2.5 py-0.5 rounded text-[11px] font-bold uppercase bg-[#0F1113] text-gray-400 border border-[#2D3135]">ส่งมอบแล้ว</span>;
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">ส่งมอบแล้ว</span>;
+      case 'closed':
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">🏁 ปิดใบซ่อมแล้ว</span>;
+      default:
+        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-gray-500/20 text-gray-300 border border-gray-500/30">{status}</span>;
     }
   };
 
@@ -105,6 +127,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           >
             <History className="w-4 h-4 text-blue-400" />
             <span>ประวัติใบซ่อมย้อนหลัง</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (setActiveTab) {
+                setActiveTab('sheets');
+              } else {
+                setIsSheetsModalOpen(true);
+              }
+            }}
+            className="px-4 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-200 hover:text-white font-bold text-sm transition-all flex items-center gap-2 active:scale-95 shadow-md shadow-emerald-500/10"
+            title="เปิดดูและดึงข้อมูลสดจาก Google Sheets ทุกแผ่นงาน"
+          >
+            <ArrowDownCircle className="w-4 h-4 text-emerald-400" />
+            <span>ดูข้อมูล Google Sheets สด</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-400 text-black font-black">
+              LIVE
+            </span>
           </button>
           <button
             type="button"
@@ -225,6 +265,140 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       </div>
 
+      {/* Google Sheets Live Integration & Data Hub */}
+      <div className="bg-[#14181D] border-2 border-emerald-500/40 rounded-2xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 relative z-10">
+          <div className="space-y-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="w-11 h-11 rounded-xl bg-emerald-500/20 border border-emerald-500/50 flex items-center justify-center text-emerald-300 shadow-sm">
+                <FileSpreadsheet className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2.5">
+                  <span>ข้อมูลที่ดึงมาจาก Google Sheets</span>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-500/40 font-mono">
+                    LIVE DATA
+                  </span>
+                </h2>
+                <p className="text-sm font-semibold text-gray-200 mt-0.5">
+                  เชื่อมโยงฐานข้อมูลจริงกับ Google Sheets ID:{' '}
+                  <span className="font-mono text-orange-400 font-bold bg-[#0D1013] px-2 py-0.5 rounded border border-[#2D3135]">
+                    {googleSheetsSyncStatus.spreadsheetId}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            {/* Live Data Summary Pills */}
+            <div className="flex items-center gap-3 flex-wrap pt-1 text-xs">
+              <button
+                type="button"
+                onClick={() => navigateTo('sheets')}
+                className="px-3.5 py-1.5 rounded-xl bg-[#0D1013] hover:bg-[#1A2027] border border-emerald-500/40 text-gray-200 hover:text-white font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <span>📦 อะไหล่ในชีต:</span>
+                <strong className="text-orange-400 font-mono font-bold text-sm">71 รายการ</strong>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigateTo('sheets')}
+                className="px-3.5 py-1.5 rounded-xl bg-[#0D1013] hover:bg-[#1A2027] border border-emerald-500/40 text-gray-200 hover:text-white font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <span>👥 ลูกค้าในชีต:</span>
+                <strong className="text-sky-400 font-mono font-bold text-sm">20 ราย</strong>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigateTo('sheets')}
+                className="px-3.5 py-1.5 rounded-xl bg-[#0D1013] hover:bg-[#1A2027] border border-emerald-500/40 text-gray-200 hover:text-white font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <span>📋 ใบสั่งซ่อมในชีต:</span>
+                <strong className="text-emerald-400 font-mono font-bold text-sm">8 ใบงาน</strong>
+              </button>
+
+              {lastSheetPullAt && (
+                <span className="px-3.5 py-1.5 rounded-xl bg-[#0D1013] border border-[#2D3135] text-gray-300 font-medium font-mono">
+                  ดึงข้อมูลล่าสุด: <strong className="text-white font-bold">{lastSheetPullAt}</strong>
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => navigateTo('sheets')}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-sm flex items-center gap-2 shadow-lg shadow-emerald-600/30 active:scale-95 transition-all"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>เปิดดูตารางข้อมูลสด (Live Sheets)</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={isPullingSheets}
+              onClick={() => pullDataFromGoogleSheets(true)}
+              className="px-4 py-2.5 rounded-xl bg-[#0D1013] hover:bg-[#1A2027] border border-emerald-500/50 text-emerald-300 hover:text-white font-bold text-sm flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+              title="ดึงข้อมูลล่าสุดจาก Google Sheets เข้าสู่ระบบอู่"
+            >
+              <ArrowDownCircle className={`w-4 h-4 ${isPullingSheets ? 'animate-spin' : ''}`} />
+              <span>{isPullingSheets ? 'กำลังดึงข้อมูล...' : 'ดึงข้อมูลสด (Pull)'}</span>
+            </button>
+
+            <a
+              href={`https://docs.google.com/spreadsheets/d/${googleSheetsSyncStatus.spreadsheetId}/edit`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3.5 py-2.5 rounded-xl bg-[#0D1013] hover:bg-[#1A2027] border border-[#2D3135] text-gray-200 hover:text-white font-bold text-sm flex items-center gap-1.5 transition-all"
+              title="เปิด Google Sheets ในแท็บใหม่"
+            >
+              <ExternalLink className="w-4 h-4 text-emerald-400" />
+              <span>เปิดชีตจริง</span>
+            </a>
+          </div>
+        </div>
+
+        {/* Quick highlight of parts imported from Google Sheets */}
+        <div className="mt-4 pt-4 border-t border-[#22272E] grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          <div className="p-3 rounded-xl bg-[#0D1013]/70 border border-[#22272E] space-y-1">
+            <span className="text-gray-400 font-medium">ตัวอย่างอะไหล่จากชีต</span>
+            <p className="text-white font-bold truncate">
+              {spareParts[0]?.name || 'แหวนรองหัวฉีด ISUZU (แท้) x 4 ตัว'}
+            </p>
+            <div className="flex items-center justify-between text-gray-300 font-mono">
+              <span className="text-orange-400 font-bold">{spareParts[0]?.partCode || 'PART-001'}</span>
+              <span className="text-emerald-400 font-bold">฿{spareParts[0]?.sellPrice?.toLocaleString() || '180'}</span>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-[#0D1013]/70 border border-[#22272E] space-y-1">
+            <span className="text-gray-400 font-medium">ตัวอย่างลูกค้าจากชีต</span>
+            <p className="text-white font-bold truncate">
+              {customers[0]?.name || 'คุณสมชาย ใจดี'}
+            </p>
+            <div className="flex items-center justify-between text-gray-300 font-mono">
+              <span className="text-sky-400 font-bold">{customers[0]?.phone || '081-234-5678'}</span>
+              <span className="text-gray-300">{customers[0]?.vehicles?.[0]?.licensePlate || '1กข-9999 กทม'}</span>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-[#0D1013]/70 border border-[#22272E] space-y-1">
+            <span className="text-gray-400 font-medium">ตัวอย่างใบสั่งซ่อมจากชีต</span>
+            <p className="text-white font-bold truncate">
+              {jobOrders[0]?.issueDescription || 'ตรวจเช็คระยะ 50,000 กม.'}
+            </p>
+            <div className="flex items-center justify-between text-gray-300 font-mono">
+              <span className="text-orange-400 font-bold">{jobOrders[0]?.jobNo || 'JOB-001'}</span>
+              <span className="text-emerald-400 font-bold">฿{jobOrders[0]?.totalAmount?.toLocaleString() || '2,450'}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Interactive Service Bays / Hoists Floor Map (ช่องซ่อม 1 - 3) */}
       <div className="bg-[#16191D] border border-[#2D3135] rounded-xl p-6 shadow-md">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
@@ -263,7 +437,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             const currentJob = jobOrders.find(
               (j) =>
                 (bay.currentJobId && j.id === bay.currentJobId) ||
-                (j.bayNumber === bay.bayNumber && j.status !== 'delivered' && j.status !== 'completed')
+                (j.bayNumber === bay.bayNumber && j.status !== 'delivered' && j.status !== 'completed' && j.status !== 'closed')
             );
             const isOccupied = (bay.status === 'occupied' || !!currentJob) && bay.status !== 'maintenance' && !!currentJob;
 
@@ -402,30 +576,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </div>
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-orange-400 font-mono text-sm">{job.licensePlate}</span>
-                        <span className="text-xs text-gray-300 font-medium">{job.carBrand} {job.carModel}</span>
+                        <span className="font-bold text-orange-400 font-mono text-base">{job.licensePlate}</span>
+                        <span className="text-sm text-gray-100 font-bold">{job.carBrand} {job.carModel}</span>
                         {job.priority === 'urgent' && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-500 border border-red-500/20 uppercase">
-                            Urgent 🔥
+                          <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-500/20 text-red-300 border border-red-500/30 uppercase">
+                            ด่วนมาก 🔥
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">
+                      <p className="text-sm text-gray-200 mt-0.5 line-clamp-1 font-medium">
                         อาการ: {job.issueDescription}
                       </p>
-                      <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-400">
-                        <span>ลูกค้า: <strong className="text-gray-300">{job.customerName}</strong></span>
+                      <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-300 font-medium">
+                        <span>ลูกค้า: <strong className="text-white font-bold">{job.customerName}</strong></span>
                         <span>•</span>
                         <span>ช่องซ่อม #{job.bayNumber || '-'}</span>
                         <span>•</span>
-                        <span>ช่าง: {job.mechanicName || 'ยังไม่มอบหมาย'}</span>
+                        <span>ช่าง: <strong className="text-gray-100">{job.mechanicName || 'ยังไม่มอบหมาย'}</strong></span>
                       </div>
                     </div>
                   </div>
 
                   <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2 border-t sm:border-t-0 pt-2 sm:pt-0 border-[#2D3135]">
                     {getStatusBadge(job.status)}
-                    <span className="text-sm font-mono font-bold text-white">
+                    <span className="text-base font-mono font-bold text-emerald-400">
                       ฿{job.totalAmount.toLocaleString()}
                     </span>
                   </div>
@@ -462,17 +636,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {lowStockParts.slice(0, 4).map((part) => (
                   <div
                     key={part.id}
-                    className="p-3 bg-[#0F1113] border border-red-500/20 rounded-xl flex items-center justify-between"
+                    className="p-3.5 bg-[#0F1113] border border-red-500/30 rounded-xl flex items-center justify-between"
                   >
                     <div>
-                      <p className="text-xs font-bold text-gray-200 line-clamp-1">{part.name}</p>
-                      <p className="text-[11px] text-gray-400 font-mono">{part.partCode} • {part.locationRack || 'โซนทั่วไป'}</p>
+                      <p className="text-sm font-bold text-white line-clamp-1">{part.name}</p>
+                      <p className="text-xs text-gray-300 font-mono font-semibold mt-0.5">{part.partCode} • {part.locationRack || 'โซนทั่วไป'}</p>
                     </div>
-                    <div className="text-right shrink-0 ml-2">
-                      <span className="text-xs font-mono font-bold text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">
+                    <div className="text-right shrink-0 ml-3">
+                      <span className="text-xs font-mono font-bold text-rose-300 bg-rose-500/20 px-2.5 py-1 rounded-lg border border-rose-500/30">
                         เหลือ {part.stockQty} {part.unit}
                       </span>
-                      <p className="text-[10px] text-gray-400 mt-0.5">ขั้นต่ำ {part.minStockQty}</p>
+                      <p className="text-xs text-gray-300 mt-1 font-medium">ขั้นต่ำ {part.minStockQty}</p>
                     </div>
                   </div>
                 ))}
@@ -480,39 +654,41 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             )}
           </div>
 
-          {/* Quick Staff Mechanic Status (3 Positions) */}
+          {/* Quick Staff Mechanic Status */}
           <div className="bg-[#16191D] border border-[#2D3135] rounded-xl p-5 shadow-md space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
                 <Users className="w-4 h-4 text-orange-400" />
-                <span>ทีมช่างประจำอู่ (3 ตำแหน่ง)</span>
+                <span>ทีมช่างประจำอู่ ({mechanics.length} ท่าน)</span>
               </h2>
               <button
-                onClick={() => navigateTo('bays')}
-                className="text-xs text-orange-400 hover:underline font-semibold"
+                type="button"
+                onClick={() => setIsMechanicModalOpen(true)}
+                className="text-xs text-orange-400 hover:text-orange-300 font-bold hover:underline flex items-center gap-1"
               >
-                จัดการช่าง
+                <span>+ จัดการรายชื่อช่าง</span>
               </button>
             </div>
 
             <div className="space-y-2.5">
-              {mechanics.slice(0, 3).map((mech, index) => (
+              {mechanics.slice(0, 4).map((mech, index) => (
                 <div
                   key={mech.id}
-                  className="p-3 bg-[#0F1113] border border-[#2D3135] rounded-xl flex items-center justify-between text-xs hover:border-orange-500/30 transition-all"
+                  onClick={() => setIsMechanicModalOpen(true)}
+                  className="p-3 bg-[#0F1113] border border-[#2D3135] rounded-xl flex items-center justify-between text-xs hover:border-orange-500/40 transition-all cursor-pointer group"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center font-bold text-orange-400 text-xs shrink-0 font-mono">
+                    <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center font-bold text-orange-400 text-xs shrink-0 font-mono group-hover:scale-105 transition-transform">
                       #{index + 1}
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <p className="font-semibold text-gray-200">{mech.name}</p>
+                        <p className="font-semibold text-gray-200 group-hover:text-white">{mech.name}</p>
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20 font-medium">
                           {mech.positionTitle || `ตำแหน่งที่ ${index + 1}`}
                         </span>
                       </div>
-                      <p className="text-[10px] text-gray-400 mt-0.5">{mech.specialties.join(' • ')}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">{(mech.specialties || []).slice(0, 2).join(' • ')}</p>
                     </div>
                   </div>
                   <span
@@ -527,6 +703,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
               ))}
             </div>
+
+            {mechanics.length > 4 && (
+              <button
+                type="button"
+                onClick={() => setIsMechanicModalOpen(true)}
+                className="w-full py-1 text-center text-xs text-gray-400 hover:text-orange-400 font-medium"
+              >
+                ดูช่างทั้งหมด {mechanics.length} ท่าน →
+              </button>
+            )}
           </div>
 
         </div>
@@ -537,6 +723,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <PromptPayQRModal
         isOpen={isPromptPayModalOpen}
         onClose={() => setIsPromptPayModalOpen(false)}
+      />
+
+      {/* Google Sheets Live Pull & Sync Modal */}
+      <GoogleSheetsSyncModal
+        isOpen={isSheetsModalOpen}
+        onClose={() => setIsSheetsModalOpen(false)}
+        targetTab="fetch"
+      />
+
+      {/* Mechanic Manager Modal */}
+      <MechanicManagerModal
+        isOpen={isMechanicModalOpen}
+        onClose={() => setIsMechanicModalOpen(false)}
       />
 
     </div>

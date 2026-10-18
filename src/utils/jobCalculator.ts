@@ -22,7 +22,8 @@ export interface CalculationBreakdown {
 
 export interface CalculationInput {
   parts: (JobPartItem | { quantity: number; unitPrice: number; costPrice?: number })[];
-  laborFee: number;
+  laborFee?: number;
+  laborDetails?: { fee: number }[];
   otherFee?: number;
   discount?: number;
   discountType?: 'amount' | 'percent';
@@ -38,7 +39,8 @@ export interface CalculationInput {
  */
 export function calculateJobBreakdown(input: CalculationInput): CalculationBreakdown {
   const parts = input.parts || [];
-  const laborFee = Math.max(0, Number(input.laborFee) || 0);
+  const laborFeeFromDetails = (input.laborDetails || []).reduce((sum, item) => sum + (Number(item.fee) || 0), 0);
+  const laborFee = Math.max(0, input.laborFee !== undefined ? Number(input.laborFee) || 0 : laborFeeFromDetails);
   const otherFee = Math.max(0, Number(input.otherFee) || 0);
   
   // 1. Calculate Parts Total and Cost

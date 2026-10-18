@@ -11,10 +11,13 @@ import {
   Clock,
   ShieldCheck,
   Zap,
-  Activity
+  Activity,
+  Edit2,
+  Plus
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { ServiceBay, MechanicStaff } from '../types';
+import { MechanicManagerModal } from './MechanicManagerModal';
 
 interface ServiceBaysViewProps {
   onSelectJob: (jobId: string) => void;
@@ -26,6 +29,7 @@ export const ServiceBaysView: React.FC<ServiceBaysViewProps> = ({
   onOpenNewJobModal,
 }) => {
   const { serviceBays, mechanics, jobOrders, updateBayStatus, updateMechanicStatus } = useGarage();
+  const [isMechanicModalOpen, setIsMechanicModalOpen] = useState(false);
 
   const occupiedCount = serviceBays.filter((b) => b.status === 'occupied').length;
   const availableCount = serviceBays.filter((b) => b.status === 'available').length;
@@ -66,7 +70,7 @@ export const ServiceBaysView: React.FC<ServiceBaysViewProps> = ({
             const currentJob = jobOrders.find(
               (j) =>
                 (bay.currentJobId && j.id === bay.currentJobId) ||
-                (j.bayNumber === bay.bayNumber && j.status !== 'delivered' && j.status !== 'completed')
+                (j.bayNumber === bay.bayNumber && j.status !== 'delivered' && j.status !== 'completed' && j.status !== 'closed')
             );
             const isOccupied = (bay.status === 'occupied' || !!currentJob) && bay.status !== 'maintenance' && !!currentJob;
 
@@ -167,76 +171,98 @@ export const ServiceBaysView: React.FC<ServiceBaysViewProps> = ({
 
       {/* Mechanics / Staff Section (3 Positions) */}
       <div className="bg-[#16191D] border border-[#2D3135] rounded-xl p-6 shadow-md space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Users className="w-5 h-5 text-orange-500" />
-              <span>ทีมช่างซ่อมและช่างเทคนิค (3 ตำแหน่ง)</span>
+              <span>ทีมช่างซ่อมและช่างเทคนิค ({mechanics.length} ท่าน)</span>
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              โครงสร้างทีมช่างประจำ 3 ตำแหน่งหลัก สอดคล้องกับ 3 ช่องซ่อม (เครื่องยนต์ • ช่วงล่าง/เบรก • ระบบไฟฟ้า/แอร์)
+              เจ้าของอู่สามารถ เพิ่ม ลบ และแก้ไขข้อมูลช่าง เบอร์โทร ตำแหน่ง และความเชี่ยวชาญได้อิสระ
             </p>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setIsMechanicModalOpen(true)}
+            className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-md shadow-orange-500/20 active:scale-95 transition-all self-start sm:self-auto"
+          >
+            <Plus className="w-4 h-4 stroke-[3]" />
+            <span>+ จัดการ & เพิ่มรายชื่อช่าง</span>
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {mechanics.slice(0, 3).map((mech, index) => {
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {mechanics.map((mech, index) => {
             const currentMechJobs = jobOrders.filter(
-              (j) => j.mechanicId === mech.id && j.status !== 'delivered' && j.status !== 'completed'
+              (j) => j.mechanicId === mech.id && j.status !== 'delivered' && j.status !== 'closed'
             );
 
             return (
               <div
                 key={mech.id}
-                className="p-5 bg-[#0F1113] border border-[#2D3135] hover:border-orange-500/40 rounded-xl space-y-3.5 transition-all shadow-sm"
+                className="p-5 bg-[#0F1113] border border-[#2D3135] hover:border-orange-500/40 rounded-xl space-y-3.5 transition-all shadow-sm flex flex-col justify-between"
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 flex items-center justify-center font-bold text-sm font-mono shrink-0 shadow-inner">
-                      #{index + 1}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 font-bold border border-orange-500/20">
-                          {mech.positionTitle || `ตำแหน่งที่ ${index + 1}`}
-                        </span>
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 flex items-center justify-center font-bold text-sm font-mono shrink-0 shadow-inner">
+                        #{index + 1}
                       </div>
-                      <h4 className="text-sm font-bold text-white mt-1">{mech.name}</h4>
-                      <p className="text-[11px] text-gray-400 font-mono mt-0.5 flex items-center gap-1">
-                        <Phone className="w-3 h-3 text-orange-400" />
-                        <span>{mech.phone}</span>
-                      </p>
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 font-bold border border-orange-500/20">
+                            {mech.positionTitle || (mech.role === 'lead' ? 'หัวหน้าช่าง' : `ช่างตำแหน่ง #${index + 1}`)}
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-bold text-white mt-1">{mech.name}</h4>
+                        <p className="text-[11px] text-gray-400 font-mono mt-0.5 flex items-center gap-1">
+                          <Phone className="w-3 h-3 text-orange-400" />
+                          <span>{mech.phone}</span>
+                        </p>
+                      </div>
                     </div>
+
+                    <select
+                      value={mech.status}
+                      onChange={(e) => updateMechanicStatus(mech.id, e.target.value as any)}
+                      className="text-[11px] bg-[#16191D] border border-[#2D3135] rounded-lg px-2.5 py-1 text-gray-200 focus:outline-none focus:border-orange-500"
+                    >
+                      <option value="available">ว่าง (พร้อมรับ)</option>
+                      <option value="busy">กำลังซ่อม</option>
+                      <option value="leave">ลา</option>
+                    </select>
                   </div>
 
-                  <select
-                    value={mech.status}
-                    onChange={(e) => updateMechanicStatus(mech.id, e.target.value as any)}
-                    className="text-[11px] bg-[#16191D] border border-[#2D3135] rounded-lg px-2.5 py-1 text-gray-200 focus:outline-none focus:border-orange-500"
-                  >
-                    <option value="available">ว่าง (พร้อมรับ)</option>
-                    <option value="busy">กำลังซ่อม</option>
-                    <option value="leave">ลา</option>
-                  </select>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {mech.specialties.map((spec, i) => (
+                      <span
+                        key={i}
+                        className="px-2 py-0.5 bg-[#16191D] text-gray-300 rounded text-[10px] border border-[#2D3135]"
+                      >
+                        {spec}
+                      </span>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {mech.specialties.map((spec, i) => (
-                    <span
-                      key={i}
-                      className="px-2 py-0.5 bg-[#16191D] text-gray-300 rounded text-[10px] border border-[#2D3135]"
-                    >
-                      {spec}
+                <div className="pt-2.5 border-t border-[#2D3135] space-y-2.5">
+                  <div className="flex items-center justify-between text-xs text-gray-400">
+                    <span>งานที่กำลังทำ: <strong className="text-orange-400 font-mono">{currentMechJobs.length} คัน</strong></span>
+                    <span className="flex items-center gap-1 text-orange-400 font-semibold text-[11px]">
+                      <Star className="w-3.5 h-3.5 fill-orange-500 text-orange-500" />
+                      <span className="font-mono">{mech.rating}</span>
                     </span>
-                  ))}
-                </div>
+                  </div>
 
-                <div className="pt-2.5 border-t border-[#2D3135] flex items-center justify-between text-xs text-gray-400">
-                  <span>งานที่กำลังทำ: <strong className="text-orange-400 font-mono">{currentMechJobs.length} คัน</strong></span>
-                  <span className="flex items-center gap-1 text-orange-400 font-semibold text-[11px]">
-                    <Star className="w-3.5 h-3.5 fill-orange-500 text-orange-500" />
-                    <span className="font-mono">{mech.rating}</span>
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsMechanicModalOpen(true)}
+                    className="w-full py-1.5 px-3 rounded-lg bg-[#16191D] hover:bg-[#20252C] text-orange-300 hover:text-white border border-[#2D3135] font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>แก้ไขข้อมูล / จัดการ</span>
+                  </button>
                 </div>
               </div>
             );
@@ -244,6 +270,11 @@ export const ServiceBaysView: React.FC<ServiceBaysViewProps> = ({
         </div>
       </div>
 
+      {/* Mechanic Manager Modal */}
+      <MechanicManagerModal
+        isOpen={isMechanicModalOpen}
+        onClose={() => setIsMechanicModalOpen(false)}
+      />
     </div>
   );
 };

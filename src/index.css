@@ -1,11 +1,126 @@
 @import "tailwindcss";
 
 @layer base {
-  body {
-    font-family: 'Prompt', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    background-color: #0F1113;
-    color: #F3F4F6;
+  :root {
+    --app-font-scale: 1;
   }
+
+  body {
+    font-family: 'Prompt', 'Kanit', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: #0d1013;
+    color: #f8fafc;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1.65;
+    letter-spacing: 0.005em;
+  }
+
+  /* High-contrast and legibility enhancements for Thai & English text */
+  h1, h2, h3, h4, h5, h6 {
+    color: #ffffff;
+    font-weight: 800;
+    letter-spacing: -0.015em;
+    line-height: 1.3;
+  }
+
+  /* Ensure input text, select options, and buttons are crisp, bold, and high-contrast */
+  input, select, textarea, button {
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 500;
+  }
+
+  /* Ensure secondary and muted text remains clearly readable on dark backgrounds (WCAG AAA) */
+  p, span, label {
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .text-gray-400 {
+    color: #cbd5e1 !important; /* Slate 300 - vastly clearer than dark gray */
+  }
+
+  .text-gray-500 {
+    color: #94a3b8 !important; /* Slate 400 */
+  }
+
+  /* Crisp table rendering with high contrast borders and clear padding */
+  table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  th {
+    color: #ffffff !important;
+    font-weight: 800 !important;
+    font-size: 13.5px !important;
+    letter-spacing: 0.02em;
+  }
+
+  td {
+    color: #f8fafc !important;
+    font-weight: 500;
+    font-size: 14.5px;
+  }
+}
+
+/* High Legibility Large Font Mode (A+ Mode) */
+.high-legibility-mode {
+  font-size: 18px !important;
+}
+
+.high-legibility-mode h1 {
+  font-size: 2rem !important;
+  line-height: 1.3 !important;
+}
+
+.high-legibility-mode h2 {
+  font-size: 1.65rem !important;
+}
+
+.high-legibility-mode h3 {
+  font-size: 1.35rem !important;
+}
+
+.high-legibility-mode input,
+.high-legibility-mode select,
+.high-legibility-mode textarea,
+.high-legibility-mode button {
+  font-size: 16px !important;
+}
+
+.high-legibility-mode table {
+  font-size: 16.5px !important;
+}
+
+.high-legibility-mode table th {
+  font-size: 15px !important;
+  padding-top: 1rem !important;
+  padding-bottom: 1rem !important;
+}
+
+.high-legibility-mode table td {
+  font-size: 15.5px !important;
+  padding-top: 1.1rem !important;
+  padding-bottom: 1.1rem !important;
+}
+
+/* Custom sleek high-contrast scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0B0D0F;
+}
+::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4B5563;
 }
 
 @media print {
@@ -19,6 +134,7 @@
     color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
+    font-size: 13px !important;
   }
 
   /* Force exact color adjustment */
@@ -35,20 +151,3 @@
     display: block !important;
   }
 }
-
-/* Custom sleek Elegant Dark scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #0F1113;
-}
-::-webkit-scrollbar-thumb {
-  background: #2D3135;
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #4B5563;
-}
-

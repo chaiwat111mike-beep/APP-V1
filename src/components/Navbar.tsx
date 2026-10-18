@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Search,
   PlusCircle,
@@ -59,6 +59,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
   const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
   const [isPromptPayModalOpen, setIsPromptPayModalOpen] = useState(false);
+  const [isHighLegibility, setIsHighLegibility] = useState<boolean>(
+    () => typeof window !== 'undefined' && localStorage.getItem('songkarn_high_legibility') === 'true'
+  );
+
+  useEffect(() => {
+    if (localStorage.getItem('songkarn_high_legibility') === 'true') {
+      document.body.classList.add('high-legibility-mode');
+    }
+  }, []);
 
   const phone = garageProfile.mechanicPhone || garageProfile.phone || DEFAULT_MECHANIC_PHONE;
   const lineId = garageProfile.lineId || DEFAULT_LINE_ID;
@@ -251,6 +260,30 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <ExternalLink className="w-3 h-3 opacity-70" />
               </a>
 
+              {/* High-Legibility Font Toggle Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  const nextVal = !isHighLegibility;
+                  setIsHighLegibility(nextVal);
+                  localStorage.setItem('songkarn_high_legibility', String(nextVal));
+                  if (nextVal) {
+                    document.body.classList.add('high-legibility-mode');
+                  } else {
+                    document.body.classList.remove('high-legibility-mode');
+                  }
+                }}
+                title={isHighLegibility ? 'สลับกลับเป็นขนาดตัวหนังสือปกติ' : 'เปิดโหมดตัวหนังสือขนาดใหญ่พิเศษ (อ่านง่าย คมชัด)'}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all text-xs font-bold active:scale-95 shadow-sm ${
+                  isHighLegibility
+                    ? 'bg-amber-500/25 border-amber-400 text-amber-300 ring-2 ring-amber-500/30'
+                    : 'bg-[#1C2025] hover:bg-[#282E35] border-[#2D3135] text-gray-200 hover:text-white'
+                }`}
+              >
+                <span className="font-mono text-sm font-black">A+</span>
+                <span className="hidden lg:inline">{isHighLegibility ? 'ตัวหนังสือใหญ่' : 'ขยายตัวหนังสือ'}</span>
+              </button>
+
               {/* PromptPay Quick QR Payment Button */}
               <button
                 type="button"
@@ -268,15 +301,24 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="hidden md:inline">QR พร้อมเพย์</span>
               </button>
 
-              {/* Google Sheets Sync Action Button */}
+              {/* Google Sheets Sync & Live Fetch Action Button */}
               <button
                 type="button"
-                onClick={() => setIsSheetsModalOpen(true)}
-                title="จัดการเชื่อมต่อและซิงค์ข้อมูล Google Sheets เรียลไทม์"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0F9D58]/10 border border-[#0F9D58]/30 hover:bg-[#0F9D58]/20 text-[#0F9D58] transition-all text-xs font-bold active:scale-95"
+                onClick={() => {
+                  if (setActiveTab) {
+                    setActiveTab('sheets');
+                  } else {
+                    setIsSheetsModalOpen(true);
+                  }
+                }}
+                title="เปิดดูและดึงข้อมูลสดจาก Google Sheets ทุกแผ่นงาน"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 hover:bg-emerald-500/30 text-emerald-300 hover:text-white transition-all text-xs font-bold active:scale-95 shadow-sm"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Google Sheets</span>
+                <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                <span className="hidden sm:inline">Google Sheets สด</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-400 text-black font-black">
+                  LIVE
+                </span>
               </button>
 
               {/* Real-time Firebase Sync Status Badge */}
@@ -296,7 +338,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
                 </div>
                 <div className="font-mono text-green-400 text-xs">
-                  <span>DB: Songkarn-v1</span>
+                  <span>DB: Songkarn v2.0</span>
                 </div>
               </div>
 

@@ -19,14 +19,15 @@ import {
   Flame,
   Calendar,
   DollarSign,
-  FileSpreadsheet,
   Download,
-  History
+  History,
+  ArrowDownCircle
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { JobOrder, JobStatus, JobPriority } from '../types';
 import { formatThaiDateTime, getDurationDisplay } from '../utils/jobCalculator';
 import { downloadCsvFile } from '../services/googleSheetsService';
+import { GoogleSheetsSyncModal } from './GoogleSheetsSyncModal';
 
 interface JobOrdersViewProps {
   onSelectJob: (jobId: string) => void;
@@ -41,12 +42,14 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
   onPrintJob,
   onNavigateToHistory,
 }) => {
-  const { jobOrders, updateJobStatus, deleteJobOrder } = useGarage();
+  const { jobOrders, updateJobStatus, deleteJobOrder, pullDataFromGoogleSheets, isPullingSheets } = useGarage();
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [deleteConfirmJob, setDeleteConfirmJob] = useState<{ id: string; jobNo: string } | null>(null);
+  const [isSheetsModalOpen, setIsSheetsModalOpen] = useState<boolean>(false);
+  const [pullFeedback, setPullFeedback] = useState<string | null>(null);
 
   const filteredJobs = jobOrders.filter((job) => {
     const q = searchQuery.toLowerCase();
@@ -71,7 +74,8 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
     { status: 'in_progress', title: 'กำลังซ่อม', color: 'border-orange-500/40', badgeBg: 'bg-orange-500/10 text-orange-400 border border-orange-500/20' },
     { status: 'qc', title: 'ทดสอบ QC', color: 'border-purple-500/40', badgeBg: 'bg-purple-500/10 text-purple-400 border border-purple-500/20' },
     { status: 'completed', title: 'ซ่อมเสร็จสมบูรณ์', color: 'border-green-500/40', badgeBg: 'bg-green-500/10 text-green-400 border border-green-500/20' },
-    { status: 'delivered', title: 'ส่งมอบรถแล้ว', color: 'border-[#2D3135]', badgeBg: 'bg-[#0F1113] text-gray-400 border border-[#2D3135]' },
+    { status: 'delivered', title: 'ส่งมอบรถแล้ว', color: 'border-cyan-500/40', badgeBg: 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' },
+    { status: 'closed', title: '🏁 ปิดใบซ่อมแล้ว', color: 'border-emerald-500/40', badgeBg: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' },
   ];
 
   const getNextStatus = (current: JobStatus): JobStatus | null => {
@@ -82,7 +86,8 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
       case 'in_progress': return 'qc';
       case 'qc': return 'completed';
       case 'completed': return 'delivered';
-      case 'delivered': return null;
+      case 'delivered': return 'closed';
+      case 'closed': return null;
     }
   };
 
@@ -135,6 +140,17 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
     downloadCsvFile(`[อู่สงกรานต์]_รายการใบสั่งซ่อม_${new Date().toISOString().slice(0, 10)}.csv`, [headers, ...rows]);
   };
 
+  const handleDirectPull = async () => {
+    setPullFeedback('กำลังดึงข้อมูลใบสั่งซ่อมสดจาก Google Sheets...');
+    const res = await pullDataFromGoogleSheets(true);
+    if (res && res.jobOrders.length > 0) {
+      setPullFeedback(`✅ ดึงและอัปเดตใบสั่งซ่อมสดสำเร็จ ${res.jobOrders.length} ใบจาก Google Sheets เรียบร้อยแล้ว!`);
+      setTimeout(() => setPullFeedback(null), 5000);
+    } else {
+      setIsSheetsModalOpen(true);
+    }
+  };
+
   return (
     <div className="space-y-6">
       
@@ -146,7 +162,7 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
             <span>ระบบจัดการใบสั่งซ่อม (Job Orders)</span>
           </h1>
           <p className="text-xs text-gray-400 mt-1">
-            รายการรถเข้าซ่อมทั้งหมด {jobOrders.length} รายการ (กำลังซ่อม {jobOrders.filter(j => j.status !== 'delivered').length} คัน) • รันเลขออโต้ & คำนวณค่าใช้จ่ายเรียลไทม์
+            รายการรถเข้าซ่อมทั้งหมด {jobOrders.length} รายการ (กำลังซ่อม {jobOrders.filter(j => j.status !== 'delivered' && j.status !== 'closed').length} คัน) • รันเลขออโต้ & คำนวณค่าใช้จ่ายเรียลไทม์
           </p>
         </div>
 
@@ -189,6 +205,18 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
             </button>
           )}
 
+          {/* Direct Pull / Fetch Live Sheet Button */}
+          <button
+            type="button"
+            disabled={isPullingSheets}
+            onClick={handleDirectPull}
+            className="px-4 py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/50 text-emerald-200 hover:text-white font-bold text-sm flex items-center gap-2 transition-all active:scale-95 shadow-md shadow-emerald-500/10 disabled:opacity-50"
+            title="ดึงข้อมูลใบสั่งซ่อมสดจาก Google Sheets มาแสดงผลและอัปเดตทันที"
+          >
+            <ArrowDownCircle className={`w-4 h-4 text-emerald-400 ${isPullingSheets ? 'animate-spin' : ''}`} />
+            <span>{isPullingSheets ? 'กำลังดึงข้อมูลชีต...' : 'ดึงข้อมูล Google Sheets'}</span>
+          </button>
+
           <button
             onClick={handleExportCsv}
             className="px-3.5 py-2 rounded-xl bg-[#0F1113] hover:bg-[#20252A] text-gray-300 border border-[#2D3135] font-semibold text-xs flex items-center gap-1.5 transition-colors"
@@ -206,6 +234,19 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Pull Feedback Banner */}
+      {pullFeedback && (
+        <div className="p-3.5 bg-emerald-500/15 border border-emerald-500/40 rounded-xl text-emerald-200 text-sm font-semibold flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <span>{pullFeedback}</span>
+          </div>
+          <button onClick={() => setPullFeedback(null)} className="text-gray-300 hover:text-white text-xs underline font-bold px-2 py-1">
+            ปิด
+          </button>
+        </div>
+      )}
 
       {/* Search & Filter Bar */}
       <div className="flex flex-col sm:flex-row items-center gap-3 bg-[#16191D] p-4 rounded-xl border border-[#2D3135] text-xs">
@@ -234,6 +275,7 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
             <option value="qc">ทดสอบ QC</option>
             <option value="completed">ซ่อมเสร็จ</option>
             <option value="delivered">ส่งมอบแล้ว</option>
+            <option value="closed">🏁 ปิดใบซ่อมแล้ว (Closed)</option>
           </select>
 
           <select
@@ -505,6 +547,13 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Google Sheets Sync & Live Pull Modal */}
+      <GoogleSheetsSyncModal
+        isOpen={isSheetsModalOpen}
+        onClose={() => setIsSheetsModalOpen(false)}
+        targetTab="jobs"
+      />
 
     </div>
   );

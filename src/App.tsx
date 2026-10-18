@@ -11,6 +11,7 @@ import { ServiceBaysView } from './components/ServiceBaysView';
 import { BillingReportView } from './components/BillingReportView';
 import { SettingsView } from './components/SettingsView';
 import { RepairHistoryView } from './components/RepairHistoryView';
+import { GoogleSheetsLiveView } from './components/GoogleSheetsLiveView';
 import { JobOrderFormModal } from './components/JobOrderFormModal';
 import { JobOrderDetailModal } from './components/JobOrderDetailModal';
 import { PrintDocumentModal } from './components/PrintDocumentModal';
@@ -67,7 +68,7 @@ const GarageAppInner: React.FC = () => {
     setIsNewJobModalOpen(true);
   };
 
-  const activeJobCount = jobOrders.filter((j) => j.status !== 'delivered').length;
+  const activeJobCount = jobOrders.filter((j) => j.status !== 'delivered' && j.status !== 'closed').length;
   const lowStockCount = spareParts.filter((p) => p.stockQty <= p.minStockQty).length;
 
   return (
@@ -150,6 +151,8 @@ const GarageAppInner: React.FC = () => {
                 onPrintJob={handlePrintJob}
               />
             )}
+
+            {currentTab === 'sheets' && <GoogleSheetsLiveView />}
 
             {currentTab === 'settings' && <SettingsView />}
           </div>

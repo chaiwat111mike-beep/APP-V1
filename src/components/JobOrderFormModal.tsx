@@ -27,7 +27,8 @@ import {
   History
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
-import { JobOrder, JobPriority, JobStatus, JobPartItem, Customer, CustomerVehicle } from '../types';
+import { JobOrder, JobPriority, JobStatus, JobPartItem, Customer, CustomerVehicle, LaborServiceItem } from '../types';
+import { initialStandardLaborPresets } from '../data/initialData';
 import {
   calculateJobBreakdown,
   generateAutoJobNo,
@@ -130,7 +131,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
   const pastRepairsForThisPlate = useMemo(() => {
     if (!licensePlate || licensePlate.trim().length < 2) return [];
     return jobOrders
-      .filter((j) => j.licensePlate.trim().toLowerCase() === licensePlate.trim().toLowerCase())
+      .filter((j) => (j.licensePlate || '').trim().toLowerCase() === licensePlate.trim().toLowerCase())
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [jobOrders, licensePlate]);
 
@@ -145,7 +146,25 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
   const [customPartPrice, setCustomPartPrice] = useState<number>(0);
   const [customPartCost, setCustomPartCost] = useState<number>(0);
 
-  const [laborFee, setLaborFee] = useState<number>(500);
+  const availableLaborPresets = useMemo(() => {
+    return garageProfile.standardLaborPresets && garageProfile.standardLaborPresets.length > 0
+      ? garageProfile.standardLaborPresets
+      : initialStandardLaborPresets;
+  }, [garageProfile.standardLaborPresets]);
+
+  const [laborMode, setLaborMode] = useState<'itemized' | 'direct'>('itemized');
+  const [laborItems, setLaborItems] = useState<LaborServiceItem[]>([
+    {
+      id: 'default_labor_1',
+      title: 'ค่าบริการตรวจเช็คและซ่อมบำรุง',
+      fee: garageProfile.defaultLaborFee !== undefined ? garageProfile.defaultLaborFee : 400
+    }
+  ]);
+  const [newLaborItemTitle, setNewLaborItemTitle] = useState<string>('');
+  const [newLaborItemFee, setNewLaborItemFee] = useState<string>('');
+  const [laborDescription, setLaborDescription] = useState<string>('');
+  const [directLaborFee, setDirectLaborFee] = useState<number>(garageProfile.defaultLaborFee !== undefined ? garageProfile.defaultLaborFee : 400);
+
   const [otherFee, setOtherFee] = useState<number>(0);
   const [otherFeeDescription, setOtherFeeDescription] = useState<string>('');
   const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
@@ -155,11 +174,19 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
   const [depositAmount, setDepositAmount] = useState<number>(0);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Compute effective labor fee
+  const effectiveLaborFee = useMemo(() => {
+    if (laborMode === 'itemized') {
+      return laborItems.reduce((sum, item) => sum + (Number(item.fee) || 0), 0);
+    }
+    return Math.max(0, Number(directLaborFee) || 0);
+  }, [laborMode, laborItems, directLaborFee]);
+
   // Live calculation breakdown
   const financials = useMemo(() => {
     return calculateJobBreakdown({
       parts: partsList,
-      laborFee,
+      laborFee: effectiveLaborFee,
       otherFee,
       discount: discountType === 'amount' ? discountValue : 0,
       discountType,
@@ -168,7 +195,7 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
       vatPercent: enableVat ? vatPercent : 0,
       depositAmount,
     });
-  }, [partsList, laborFee, otherFee, discountType, discountValue, enableVat, vatPercent, depositAmount]);
+  }, [partsList, effectiveLaborFee, otherFee, discountType, discountValue, enableVat, vatPercent, depositAmount]);
 
   // Live duration estimation
   const durationInfo = useMemo(() => {
@@ -288,9 +315,38 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
     setPartsList(updated);
   };
 
-  // Quick Labor presets
-  const applyLaborPreset = (amount: number) => {
-    setLaborFee(amount);
+  // Quick Labor Handlers
+  const handleAddLaborItem = (title?: string, fee?: number) => {
+    const finalTitle = (title !== undefined ? title : newLaborItemTitle).trim();
+    if (!finalTitle) return;
+    const finalFee = fee !== undefined ? fee : Math.max(0, Number(newLaborItemFee) || 0);
+    const newItem: LaborServiceItem = {
+      id: `labor_item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      title: finalTitle,
+      fee: finalFee,
+    };
+    setLaborItems((prev) => [...prev, newItem]);
+    if (title === undefined) {
+      setNewLaborItemTitle('');
+      setNewLaborItemFee('');
+    }
+  };
+
+  const handleRemoveLaborItem = (id: string) => {
+    setLaborItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleUpdateLaborItem = (id: string, updates: Partial<LaborServiceItem>) => {
+    setLaborItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...updates } : item)));
+  };
+
+  const applyLaborPreset = (preset: LaborServiceItem) => {
+    if (laborMode === 'itemized') {
+      handleAddLaborItem(preset.title, preset.fee);
+    } else {
+      setDirectLaborFee(preset.fee);
+      setLaborDescription(preset.title);
+    }
   };
 
   // Quick Date presets
@@ -344,6 +400,8 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
       priority,
       partsUsed: partsList,
       laborFee: financials.laborFee,
+      laborDetails: laborMode === 'itemized' && laborItems.length > 0 ? laborItems : undefined,
+      laborDescription: (laborDescription || (laborMode === 'itemized' ? laborItems.map((i) => i.title).join(', ') : '')).trim() || undefined,
       otherFee: financials.otherFee,
       otherFeeDescription: otherFeeDescription.trim(),
       discount: financials.discountAmount,
@@ -1061,51 +1119,203 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
               {/* Inputs Column */}
               <div className="lg:col-span-7 space-y-3 text-xs">
                 
-                {/* Labor Fees */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-gray-200 flex items-center gap-1">
-                      <Wrench className="w-3.5 h-3.5 text-orange-400" />
-                      <span>ค่าแรงช่าง / ค่าบริการ (บาท)</span>
+                {/* Customizable Labor Fees & Services */}
+                <div className="p-3 bg-[#0F1113] border border-orange-500/30 rounded-xl space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#2D3135]">
+                    <label className="font-bold text-gray-200 flex items-center gap-1.5 text-xs">
+                      <Wrench className="w-4 h-4 text-orange-400" />
+                      <span>ค่าแรงช่าง / ค่าบริการ (กำหนดเองได้)</span>
+                      <span className="font-mono font-bold text-orange-400 text-xs ml-1 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20">
+                        ฿{effectiveLaborFee.toLocaleString()}
+                      </span>
                     </label>
-                    <div className="flex items-center gap-1 text-[10px]">
+
+                    {/* Mode Toggle */}
+                    <div className="flex items-center bg-[#16191D] p-0.5 rounded-lg border border-[#2D3135] text-[11px] self-start sm:self-auto">
                       <button
                         type="button"
-                        onClick={() => applyLaborPreset(200)}
-                        className="px-1.5 py-0.5 bg-[#16191D] hover:bg-orange-500/20 text-gray-300 hover:text-orange-400 border border-[#2D3135] rounded"
+                        onClick={() => setLaborMode('itemized')}
+                        className={`px-2.5 py-1 rounded-md font-bold transition-all ${
+                          laborMode === 'itemized'
+                            ? 'bg-orange-500 text-white shadow-sm'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
                       >
-                        ถ่ายน้ำมัน ฿200
+                        แยกรายการ ({laborItems.length})
                       </button>
                       <button
                         type="button"
-                        onClick={() => applyLaborPreset(500)}
-                        className="px-1.5 py-0.5 bg-[#16191D] hover:bg-orange-500/20 text-gray-300 hover:text-orange-400 border border-[#2D3135] rounded"
+                        onClick={() => {
+                          setLaborMode('direct');
+                          if (effectiveLaborFee > 0) setDirectLaborFee(effectiveLaborFee);
+                        }}
+                        className={`px-2.5 py-1 rounded-md font-bold transition-all ${
+                          laborMode === 'direct'
+                            ? 'bg-orange-500 text-white shadow-sm'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
                       >
-                        เช็คระยะ ฿500
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyLaborPreset(800)}
-                        className="px-1.5 py-0.5 bg-[#16191D] hover:bg-orange-500/20 text-gray-300 hover:text-orange-400 border border-[#2D3135] rounded"
-                      >
-                        ช่วงล่าง ฿800
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyLaborPreset(2500)}
-                        className="px-1.5 py-0.5 bg-[#16191D] hover:bg-orange-500/20 text-gray-300 hover:text-orange-400 border border-[#2D3135] rounded"
-                      >
-                        ยกเกียร์ ฿2,500
+                        กรอกยอดรวม
                       </button>
                     </div>
                   </div>
-                  <input
-                    type="number"
-                    min="0"
-                    value={laborFee}
-                    onChange={(e) => setLaborFee(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-white font-mono text-sm focus:outline-none focus:border-orange-500"
-                  />
+
+                  {/* Mode A: Itemized Custom Services */}
+                  {laborMode === 'itemized' ? (
+                    <div className="space-y-2.5">
+                      {/* Current Items List */}
+                      {laborItems.length === 0 ? (
+                        <div className="py-3 text-center text-gray-500 text-xs italic bg-[#16191D] rounded-lg border border-[#2D3135]">
+                          ยังไม่มีรายการค่าบริการ (ฟรีค่าแรง ฿0 หรือกดเลือกจากรายการสำเร็จรูปด้านล่าง)
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {laborItems.map((item, idx) => (
+                            <div
+                              key={item.id || idx}
+                              className="flex items-center gap-2 p-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-xs"
+                            >
+                              <span className="text-[10px] text-gray-500 font-mono w-4 text-center">{idx + 1}</span>
+                              <input
+                                type="text"
+                                value={item.title}
+                                onChange={(e) => handleUpdateLaborItem(item.id, { title: e.target.value })}
+                                placeholder="ชื่อบริการ/ค่าแรง..."
+                                className="flex-1 bg-transparent text-white border-b border-transparent focus:border-orange-500 focus:outline-none px-1 py-0.5 text-xs"
+                              />
+                              <div className="flex items-center gap-1">
+                                <span className="text-gray-400 text-xs">฿</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={item.fee}
+                                  onChange={(e) => handleUpdateLaborItem(item.id, { fee: Math.max(0, Number(e.target.value) || 0) })}
+                                  className="w-20 px-1.5 py-0.5 bg-[#0F1113] border border-[#2D3135] rounded text-right font-mono text-xs text-orange-300 font-bold focus:outline-none focus:border-orange-500"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveLaborItem(item.id)}
+                                  className="p-1 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors ml-1"
+                                  title="ลบรายการนี้"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Add Custom Item Input Row */}
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                        <input
+                          type="text"
+                          value={newLaborItemTitle}
+                          onChange={(e) => setNewLaborItemTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddLaborItem();
+                            }
+                          }}
+                          placeholder="+ ระบุชื่อค่าบริการที่กำหนดเอง (เช่น ค่าแรงเปลี่ยนลูกหมาก, ล้างปีกผีเสื้อ)..."
+                          className="flex-1 px-2.5 py-1.5 bg-[#16191D] border border-[#2D3135] rounded-lg text-xs text-white placeholder-gray-500 focus:outline-none focus:border-orange-500"
+                        />
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min="0"
+                            value={newLaborItemFee}
+                            onChange={(e) => setNewLaborItemFee(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddLaborItem();
+                              }
+                            }}
+                            placeholder="ราคา (฿)"
+                            className="w-24 px-2 py-1.5 bg-[#16191D] border border-[#2D3135] rounded-lg text-xs text-white font-mono focus:outline-none focus:border-orange-500 text-right"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleAddLaborItem()}
+                            className="px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500 text-orange-400 hover:text-white border border-orange-500/40 rounded-lg text-xs font-bold transition-all flex items-center gap-1 active:scale-95 shrink-0"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>เพิ่ม</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Mode B: Direct Custom Lump Sum Amount */
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-gray-400 text-[11px] mb-1">
+                            ยอดรวมค่าแรง/ค่าบริการ (บาท):
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={directLaborFee}
+                            onChange={(e) => setDirectLaborFee(Math.max(0, Number(e.target.value) || 0))}
+                            placeholder="0"
+                            className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-white font-mono text-sm focus:outline-none focus:border-orange-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-gray-400 text-[11px] mb-1">
+                            รายละเอียดค่าแรง/บริการ (ถ้ามี):
+                          </label>
+                          <input
+                            type="text"
+                            value={laborDescription}
+                            onChange={(e) => setLaborDescription(e.target.value)}
+                            placeholder="เช่น ค่าแรงเหมาซ่อมเครื่องยนต์, ปรับตั้งวาล์ว..."
+                            className="w-full px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-xs text-white focus:outline-none focus:border-orange-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Standard Presets Chips (Quick 1-click select/add) */}
+                  <div className="pt-2 border-t border-[#2D3135]/60">
+                    <div className="flex items-center justify-between text-[11px] text-gray-400 mb-1.5">
+                      <span>⚡ รายการค่าบริการมาตรฐานของอู่ (คลิกเพื่อ{laborMode === 'itemized' ? 'เพิ่มเข้าในรายการ' : 'กำหนดราคา'}):</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (laborMode === 'itemized') {
+                            setLaborItems([]);
+                          } else {
+                            setDirectLaborFee(0);
+                            setLaborDescription('ฟรีค่าแรงโปรโมชั่น');
+                          }
+                        }}
+                        className="text-gray-500 hover:text-orange-400 transition-colors text-[10px]"
+                      >
+                        [ ฟรีค่าบริการ ฿0 ]
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      {availableLaborPresets.map((preset, pIdx) => (
+                        <button
+                          key={preset.id || pIdx}
+                          type="button"
+                          onClick={() => applyLaborPreset(preset)}
+                          className="px-2 py-1 bg-[#16191D] hover:bg-orange-500/20 text-gray-300 hover:text-orange-300 border border-[#2D3135] hover:border-orange-500/40 rounded-lg text-[11px] transition-all flex items-center gap-1 active:scale-95"
+                        >
+                          <span>{preset.title}</span>
+                          <span className="font-mono font-bold text-orange-400">
+                            {preset.fee > 0 ? `฿${preset.fee.toLocaleString()}` : 'ฟรี'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Other Fees (Towing, Machining, etc.) */}

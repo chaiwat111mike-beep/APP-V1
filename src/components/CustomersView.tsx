@@ -19,7 +19,9 @@ import {
   Download,
   Send,
   ExternalLink,
-  MessageSquare
+  MessageSquare,
+  ArrowDownCircle,
+  CheckCircle2
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { Customer, CustomerVehicle } from '../types';
@@ -36,9 +38,17 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
   onSelectJob,
   onOpenNewJobForVehicle,
 }) => {
-  const { customers, jobOrders, addCustomer, garageProfile } = useGarage();
+  const {
+    customers,
+    jobOrders,
+    addCustomer,
+    garageProfile,
+    pullDataFromGoogleSheets,
+    isPullingSheets,
+  } = useGarage();
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(customers[0]?.id || null);
+  const [pullFeedback, setPullFeedback] = useState<string | null>(null);
 
   // Modals
   const [isAddCustomerModal, setIsAddCustomerModal] = useState(false);
@@ -144,6 +154,17 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
     downloadCsvFile(`Songkarn-Customers-${Date.now()}.csv`, [headers, ...rows]);
   };
 
+  const handleDirectPull = async () => {
+    setPullFeedback('กำลังดึงข้อมูลลูกค้าสดจาก Google Sheets...');
+    const res = await pullDataFromGoogleSheets(true);
+    if (res && res.customers.length > 0) {
+      setPullFeedback(`✅ ดึงและอัปเดตข้อมูลลูกค้าสดสำเร็จ ${res.customers.length} รายจาก Google Sheets เรียบร้อยแล้ว!`);
+      setTimeout(() => setPullFeedback(null), 5000);
+    } else {
+      setIsSheetsModalOpen(true);
+    }
+  };
+
   return (
     <div className="space-y-6">
       
@@ -159,12 +180,24 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
               REAL-TIME SYNC
             </span>
           </div>
-          <p className="text-xs text-gray-400 mt-1">
-            บันทึกประวัติการซ่อม ข้อมูลรถยนต์ ทะเบียน และยอดใช้จ่ายสะสม เชื่อมต่อ Google Sheets
+          <p className="text-sm text-gray-300 mt-1">
+            บันทึกประวัติการซ่อม ข้อมูลรถยนต์ ทะเบียน และยอดใช้จ่ายสะสม • ลูกค้าในระบบ: <strong className="text-white font-bold">{customers.length} ราย</strong>
           </p>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          {/* Direct Pull / Fetch Live Sheet Button */}
+          <button
+            type="button"
+            disabled={isPullingSheets}
+            onClick={handleDirectPull}
+            title="ดึงข้อมูลลูกค้าและประวัติรถสดจาก Google Sheets มาแสดงผลและอัปเดตทันที"
+            className="px-4 py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/50 text-emerald-200 hover:text-white font-bold text-sm flex items-center gap-2 transition-all active:scale-95 shadow-md shadow-emerald-500/10 disabled:opacity-50"
+          >
+            <ArrowDownCircle className={`w-4 h-4 text-emerald-400 ${isPullingSheets ? 'animate-spin' : ''}`} />
+            <span>{isPullingSheets ? 'กำลังดึงข้อมูลชีต...' : 'ดึงข้อมูลจากชีต (Pull)'}</span>
+          </button>
+
           {/* Google Sheets Trigger */}
           <button
             type="button"
@@ -197,6 +230,19 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Pull Feedback Banner */}
+      {pullFeedback && (
+        <div className="p-3.5 bg-emerald-500/15 border border-emerald-500/40 rounded-xl text-emerald-200 text-sm font-semibold flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <span>{pullFeedback}</span>
+          </div>
+          <button onClick={() => setPullFeedback(null)} className="text-gray-300 hover:text-white text-xs underline font-bold px-2 py-1">
+            ปิด
+          </button>
+        </div>
+      )}
 
       {/* Search Bar */}
       <div className="relative">

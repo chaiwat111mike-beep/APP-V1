@@ -20,7 +20,7 @@ import {
   initialServiceBays,
   initialGarageProfile
 } from '../data/initialData';
-import { initializeGarageFirebase } from '../firebase/config';
+import { initializeGarageFirebase, sanitizeForFirestore } from '../firebase/config';
 import {
   collection,
   doc,
@@ -43,7 +43,9 @@ import {
   getStoredGoogleToken,
   isRealGoogleSpreadsheetId,
   TARGET_SPREADSHEET_ID,
-  DEFAULT_SPREADSHEET_URL
+  DEFAULT_SPREADSHEET_URL,
+  fetchAllSheetsDataFromGoogle,
+  AllSheetsPullResult
 } from '../services/googleSheetsService';
 import { calculateJobBreakdown, generateAutoJobNo, CalculationBreakdown } from '../utils/jobCalculator';
 
@@ -74,6 +76,7 @@ interface GarageContextType {
   addJobOrder: (job: Omit<JobOrder, 'id' | 'createdAt' | 'updatedAt'> & { jobNo?: string }) => Promise<JobOrder>;
   updateJobOrder: (id: string, updates: Partial<JobOrder>) => Promise<void>;
   updateJobStatus: (id: string, newStatus: JobStatus) => Promise<void>;
+  closeJobOrder: (id: string, notes?: string) => Promise<void>;
   deleteJobOrder: (id: string) => Promise<void>;
   addPartToJob: (jobId: string, part: SparePart, quantity: number) => Promise<void>;
   removePartFromJob: (jobId: string, partId: string) => Promise<void>;
@@ -84,21 +87,32 @@ interface GarageContextType {
   updateSparePart: (id: string, updates: Partial<SparePart>) => Promise<void>;
   deleteSparePart: (id: string) => Promise<void>;
   restockPart: (id: string, addedQty: number) => Promise<void>;
+  importSpareParts: (parts: SparePart[], mode?: 'merge' | 'replace') => void;
+  importJobOrders: (jobs: JobOrder[], mode?: 'merge' | 'replace') => void;
   
   // Customer & Vehicle operations
   addCustomer: (customer: Omit<Customer, 'id' | 'createdAt' | 'totalSpent' | 'totalVisits'>) => Promise<Customer>;
   updateCustomer: (id: string, updates: Partial<Customer>) => Promise<void>;
   findCustomerByPhoneOrPlate: (query: string) => { customer?: Customer; vehicle?: any };
+  importCustomers: (customers: Customer[], mode?: 'merge' | 'replace') => void;
   
   // Bay & Mechanic operations
   assignJobToBay: (bayId: string, jobId: string | undefined) => Promise<void>;
   updateBayStatus: (bayId: string, status: ServiceBay['status']) => Promise<void>;
   updateMechanicStatus: (mechanicId: string, status: MechanicStaff['status']) => Promise<void>;
+  addMechanic: (mechanic: Omit<MechanicStaff, 'id' | 'activeJobsCount' | 'completedJobsCount'>) => Promise<MechanicStaff>;
+  updateMechanic: (id: string, updates: Partial<MechanicStaff>) => Promise<void>;
+  deleteMechanic: (id: string) => Promise<void>;
   
   // Settings & Sync
   updateGarageProfile: (profile: Partial<GarageProfile>) => Promise<void>;
   syncWithFirebase: () => Promise<boolean>;
   syncWithGoogleSheets: (type?: 'all' | 'inventory' | 'customers' | 'jobs') => Promise<boolean>;
+  pullDataFromGoogleSheets: (force?: boolean) => Promise<AllSheetsPullResult | null>;
+  isPullingSheets: boolean;
+  lastSheetPullAt: string | null;
+  sheetPullNotification: string | null;
+  dismissSheetPullNotification: () => void;
   setGoogleSheetId: (id: string) => void;
   toggleGoogleSheetAutoSync: (enabled?: boolean) => void;
   resetToDefaultData: () => void;
@@ -529,12 +543,40 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           ...job,
           status: newStatus,
           updatedAt: now,
-          completedAt: newStatus === 'completed' || newStatus === 'delivered' ? job.completedAt || now : undefined,
-          deliveredAt: newStatus === 'delivered' ? job.deliveredAt || now : undefined,
+          completedAt: newStatus === 'completed' || newStatus === 'delivered' || newStatus === 'closed' ? job.completedAt || now : undefined,
+          deliveredAt: newStatus === 'delivered' || newStatus === 'closed' ? job.deliveredAt || now : undefined,
+          closedAt: newStatus === 'closed' ? (job.closedAt || now) : (job.closedAt),
         };
 
-        // If delivered or completed, free up bay
-        if (newStatus === 'delivered' && job.bayNumber) {
+        // If delivered, closed, or completed, free up bay
+        if ((newStatus === 'delivered' || newStatus === 'closed' || newStatus === 'completed') && job.bayNumber) {
+          setServiceBays((bays) =>
+            bays.map((b) => (b.currentJobId === id ? { ...b, status: 'available', currentJobId: undefined } : b))
+          );
+        }
+
+        saveJobToFirestore(updated);
+        return updated;
+      })
+    );
+  };
+
+  const closeJobOrder = async (id: string, notes?: string) => {
+    const now = new Date().toISOString();
+    setJobOrders((prev) =>
+      prev.map((job) => {
+        if (job.id !== id) return job;
+        const updated: JobOrder = {
+          ...job,
+          status: 'closed',
+          updatedAt: now,
+          completedAt: job.completedAt || now,
+          deliveredAt: job.deliveredAt || now,
+          closedAt: now,
+          closeNotes: notes !== undefined ? notes : job.closeNotes,
+        };
+
+        if (job.bayNumber) {
           setServiceBays((bays) =>
             bays.map((b) => (b.currentJobId === id ? { ...b, status: 'available', currentJobId: undefined } : b))
           );
@@ -694,23 +736,25 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const updateOrCreateCustomerRecord = (job: JobOrder) => {
     setCustomers((prev) => {
       const existing = prev.find(
-        (c) => c.phone.trim() === job.customerPhone.trim() || c.name.trim() === job.customerName.trim()
+        (c) =>
+          ((c.phone || '').trim() && (c.phone || '').trim() === (job.customerPhone || '').trim()) ||
+          ((c.name || '').trim() && (c.name || '').trim() === (job.customerName || '').trim())
       );
 
       const vehicleEntry = {
-        licensePlate: job.licensePlate,
-        brand: job.carBrand,
-        model: job.carModel,
+        licensePlate: job.licensePlate || '',
+        brand: job.carBrand || '',
+        model: job.carModel || '',
         year: job.carYear,
         color: job.carColor,
         vin: job.vinNumber,
-        lastMileage: job.mileage,
-        lastServiceDate: job.createdAt.slice(0, 10),
+        lastMileage: job.mileage || 0,
+        lastServiceDate: (job.createdAt || new Date().toISOString()).slice(0, 10),
       };
 
       if (existing) {
-        const vehicleExists = existing.vehicles.some(
-          (v) => v.licensePlate.replace(/\s+/g, '') === job.licensePlate.replace(/\s+/g, '')
+        const vehicleExists = (existing.vehicles || []).some(
+          (v) => (v.licensePlate || '').replace(/\s+/g, '') === (job.licensePlate || '').replace(/\s+/g, '')
         );
         const updatedVehicles = vehicleExists
           ? existing.vehicles.map((v) =>
@@ -797,6 +841,45 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     );
   };
 
+  const importSpareParts = (newParts: SparePart[], mode: 'merge' | 'replace' = 'merge') => {
+    if (newParts.length === 0) return;
+    if (mode === 'replace') {
+      setSpareParts(newParts);
+      try {
+        localStorage.setItem(STORAGE_KEYS.PARTS, JSON.stringify(newParts));
+      } catch (e) {
+        console.warn('LocalStorage save parts error:', e);
+      }
+      return;
+    }
+
+    setSpareParts((prev) => {
+      const map = new Map<string, SparePart>();
+      prev.forEach((p) => map.set((p.partCode || p.name).toLowerCase(), p));
+      newParts.forEach((np) => {
+        const key = (np.partCode || np.name).toLowerCase();
+        const existing = map.get(key);
+        if (existing) {
+          map.set(key, {
+            ...existing,
+            ...np,
+            id: existing.id,
+            stockQty: np.stockQty !== undefined ? np.stockQty : existing.stockQty,
+          });
+        } else {
+          map.set(key, np);
+        }
+      });
+      const combined = Array.from(map.values());
+      try {
+        localStorage.setItem(STORAGE_KEYS.PARTS, JSON.stringify(combined));
+      } catch (e) {
+        console.warn('LocalStorage save parts error:', e);
+      }
+      return combined;
+    });
+  };
+
   // --- CUSTOMER ACTIONS ---
 
   const addCustomer = async (
@@ -846,6 +929,88 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     return {};
   };
 
+  const importCustomers = (newCusts: Customer[], mode: 'merge' | 'replace' = 'merge') => {
+    if (newCusts.length === 0) return;
+    if (mode === 'replace') {
+      setCustomers(newCusts);
+      try {
+        localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(newCusts));
+      } catch (e) {
+        console.warn('LocalStorage save customers error:', e);
+      }
+      return;
+    }
+
+    setCustomers((prev) => {
+      const map = new Map<string, Customer>();
+      prev.forEach((c) => map.set((c.phone || c.name).toLowerCase(), c));
+      newCusts.forEach((nc) => {
+        const key = (nc.phone || nc.name).toLowerCase();
+        const existing = map.get(key);
+        if (existing) {
+          map.set(key, {
+            ...existing,
+            ...nc,
+            id: existing.id,
+            vehicles: [...(existing.vehicles || []), ...(nc.vehicles || [])].filter(
+              (v, idx, arr) => arr.findIndex((x) => x.licensePlate === v.licensePlate) === idx
+            ),
+          });
+        } else {
+          map.set(key, nc);
+        }
+      });
+      const combined = Array.from(map.values());
+      try {
+        localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(combined));
+      } catch (e) {
+        console.warn('LocalStorage save customers error:', e);
+      }
+      return combined;
+    });
+  };
+
+  const importJobOrders = (newJobs: JobOrder[], mode: 'merge' | 'replace' = 'merge') => {
+    if (newJobs.length === 0) return;
+    if (mode === 'replace') {
+      setJobOrders(newJobs);
+      try {
+        localStorage.setItem(STORAGE_KEYS.JOBS, JSON.stringify(newJobs));
+      } catch (e) {
+        console.warn('LocalStorage save jobs error:', e);
+      }
+      return;
+    }
+
+    setJobOrders((prev) => {
+      const map = new Map<string, JobOrder>();
+      prev.forEach((j) => map.set((j.jobNo || j.id).toLowerCase(), j));
+      newJobs.forEach((nj) => {
+        const key = (nj.jobNo || nj.id).toLowerCase();
+        const existing = map.get(key);
+        if (existing) {
+          map.set(key, {
+            ...existing,
+            ...nj,
+            id: existing.id,
+            partsUsed: existing.partsUsed && existing.partsUsed.length > 0 ? existing.partsUsed : nj.partsUsed,
+          });
+        } else {
+          map.set(key, nj);
+        }
+      });
+      const combined = Array.from(map.values()).sort(
+        (a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime()
+      );
+      try {
+        localStorage.setItem(STORAGE_KEYS.JOBS, JSON.stringify(combined));
+      } catch (e) {
+        console.warn('LocalStorage save jobs error:', e);
+      }
+      return combined;
+    });
+  };
+
   // --- BAYS & MECHANICS ---
 
   const assignJobToBay = async (bayId: string, jobId: string | undefined) => {
@@ -879,6 +1044,84 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setMechanics((prev) => prev.map((m) => (m.id === mechanicId ? { ...m, status } : m)));
   };
 
+  const addMechanic = async (
+    mechData: Omit<MechanicStaff, 'id' | 'activeJobsCount' | 'completedJobsCount'>
+  ): Promise<MechanicStaff> => {
+    const newMech: MechanicStaff = {
+      ...mechData,
+      id: `mech_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      activeJobsCount: 0,
+      completedJobsCount: 0,
+      specialties: mechData.specialties && mechData.specialties.length > 0 ? mechData.specialties : ['งานซ่อมบำรุงทั่วไป'],
+      rating: mechData.rating !== undefined ? mechData.rating : 5.0,
+      status: mechData.status || 'available',
+    };
+    setMechanics((prev) => {
+      const updated = [...prev, newMech];
+      try {
+        localStorage.setItem(STORAGE_KEYS.MECHANICS, JSON.stringify(updated));
+      } catch (e) {
+        console.warn('LocalStorage save mechanics error:', e);
+      }
+      return updated;
+    });
+
+    const { db } = initializeGarageFirebase();
+    if (db) {
+      try {
+        await setDoc(doc(db, 'mechanics', newMech.id), sanitizeForFirestore(newMech));
+      } catch (e) {
+        console.warn('Firestore setDoc mechanic error:', e);
+      }
+    }
+    return newMech;
+  };
+
+  const updateMechanic = async (id: string, updates: Partial<MechanicStaff>) => {
+    setMechanics((prev) => {
+      const updated = prev.map((m) => (m.id === id ? { ...m, ...updates } : m));
+      try {
+        localStorage.setItem(STORAGE_KEYS.MECHANICS, JSON.stringify(updated));
+      } catch (e) {
+        console.warn('LocalStorage save mechanics error:', e);
+      }
+      return updated;
+    });
+
+    const { db } = initializeGarageFirebase();
+    if (db) {
+      try {
+        const found = mechanics.find((m) => m.id === id);
+        if (found) {
+          await setDoc(doc(db, 'mechanics', id), sanitizeForFirestore({ ...found, ...updates }), { merge: true });
+        }
+      } catch (e) {
+        console.warn('Firestore update mechanic error:', e);
+      }
+    }
+  };
+
+  const deleteMechanic = async (id: string) => {
+    setMechanics((prev) => {
+      const updated = prev.filter((m) => m.id !== id);
+      try {
+        localStorage.setItem(STORAGE_KEYS.MECHANICS, JSON.stringify(updated));
+      } catch (e) {
+        console.warn('LocalStorage save mechanics error:', e);
+      }
+      return updated;
+    });
+
+    const { db } = initializeGarageFirebase();
+    if (db) {
+      try {
+        await deleteDoc(doc(db, 'mechanics', id));
+      } catch (e) {
+        console.warn('Firestore delete mechanic error:', e);
+      }
+    }
+  };
+
   const updateGarageProfile = async (profileUpdates: Partial<GarageProfile>) => {
     setGarageProfile((prev) => {
       const updated = { ...prev, ...profileUpdates };
@@ -892,7 +1135,7 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     try {
       const { db } = initializeGarageFirebase();
       if (!db) return;
-      await setDoc(doc(db, 'job_orders', job.id), job, { merge: true });
+      await setDoc(doc(db, 'job_orders', job.id), sanitizeForFirestore(job), { merge: true });
     } catch (e) {
       console.warn('Firestore save job notice:', e);
     }
@@ -902,7 +1145,7 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     try {
       const { db } = initializeGarageFirebase();
       if (!db) return;
-      await setDoc(doc(db, 'spare_parts', part.id), part, { merge: true });
+      await setDoc(doc(db, 'spare_parts', part.id), sanitizeForFirestore(part), { merge: true });
     } catch (e) {
       console.warn('Firestore save part notice:', e);
     }
@@ -922,7 +1165,7 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     try {
       const { db } = initializeGarageFirebase();
       if (!db) return;
-      await setDoc(doc(db, 'customers', customer.id), customer, { merge: true });
+      await setDoc(doc(db, 'customers', customer.id), sanitizeForFirestore(customer), { merge: true });
     } catch (e) {
       console.warn('Firestore save customer notice:', e);
     }
@@ -932,7 +1175,7 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     try {
       const { db } = initializeGarageFirebase();
       if (!db) return;
-      await setDoc(doc(db, 'garage_profile', 'main'), profile, { merge: true });
+      await setDoc(doc(db, 'garage_profile', 'main'), sanitizeForFirestore(profile), { merge: true });
     } catch (e) {
       console.warn('Firestore save profile notice:', e);
     }
@@ -949,21 +1192,21 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         try {
           const batch = writeBatch(db);
           jobOrders.forEach((j) => {
-            batch.set(doc(db, 'job_orders', j.id), j);
+            batch.set(doc(db, 'job_orders', j.id), sanitizeForFirestore(j));
           });
           spareParts.forEach((p) => {
-            batch.set(doc(db, 'spare_parts', p.id), p);
+            batch.set(doc(db, 'spare_parts', p.id), sanitizeForFirestore(p));
           });
           customers.forEach((c) => {
-            batch.set(doc(db, 'customers', c.id), c);
+            batch.set(doc(db, 'customers', c.id), sanitizeForFirestore(c));
           });
           mechanics.forEach((m) => {
-            batch.set(doc(db, 'mechanics', m.id), m);
+            batch.set(doc(db, 'mechanics', m.id), sanitizeForFirestore(m));
           });
           serviceBays.forEach((b) => {
-            batch.set(doc(db, 'service_bays', b.id), b);
+            batch.set(doc(db, 'service_bays', b.id), sanitizeForFirestore(b));
           });
-          batch.set(doc(db, 'garage_profile', 'main'), garageProfile);
+          batch.set(doc(db, 'garage_profile', 'main'), sanitizeForFirestore(garageProfile));
 
           await batch.commit();
           setSyncStatus({
@@ -1105,6 +1348,50 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
+  const [isPullingSheets, setIsPullingSheets] = useState(false);
+  const [lastSheetPullAt, setLastSheetPullAt] = useState<string | null>(null);
+  const [sheetPullNotification, setSheetPullNotification] = useState<string | null>(null);
+
+  const dismissSheetPullNotification = () => setSheetPullNotification(null);
+
+  const pullDataFromGoogleSheets = async (_force: boolean = false): Promise<AllSheetsPullResult | null> => {
+    setIsPullingSheets(true);
+    try {
+      const targetId = googleSheetsSyncStatus.spreadsheetId || TARGET_SPREADSHEET_ID;
+      const result = await fetchAllSheetsDataFromGoogle(targetId);
+
+      if (result.parts.length > 0) {
+        importSpareParts(result.parts, 'merge');
+      }
+      if (result.customers.length > 0) {
+        importCustomers(result.customers, 'merge');
+      }
+      if (result.jobOrders.length > 0) {
+        importJobOrders(result.jobOrders, 'merge');
+      }
+
+      const timeStr = new Date().toLocaleTimeString('th-TH');
+      setLastSheetPullAt(timeStr);
+      setSheetPullNotification(
+        `ดึงข้อมูลสดจาก Google Sheets สำเร็จแล้ว! (อะไหล่ ${result.parts.length} รายการ • ลูกค้า ${result.customers.length} ราย • ใบสั่งซ่อม ${result.jobOrders.length} ใบ)`
+      );
+      setIsPullingSheets(false);
+      return result;
+    } catch (err: any) {
+      console.warn('Pull Google Sheets error:', err);
+      setIsPullingSheets(false);
+      return null;
+    }
+  };
+
+  // Automatic background pull from Google Sheets on initial load
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      pullDataFromGoogleSheets();
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <GarageContext.Provider
       value={{
@@ -1120,6 +1407,7 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         addJobOrder,
         updateJobOrder,
         updateJobStatus,
+        closeJobOrder,
         deleteJobOrder,
         addPartToJob,
         removePartFromJob,
@@ -1128,15 +1416,26 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         updateSparePart,
         deleteSparePart,
         restockPart,
+        importSpareParts,
+        importJobOrders,
         addCustomer,
         updateCustomer,
         findCustomerByPhoneOrPlate,
+        importCustomers,
         assignJobToBay,
         updateBayStatus,
         updateMechanicStatus,
+        addMechanic,
+        updateMechanic,
+        deleteMechanic,
         updateGarageProfile,
         syncWithFirebase,
         syncWithGoogleSheets,
+        pullDataFromGoogleSheets,
+        isPullingSheets,
+        lastSheetPullAt,
+        sheetPullNotification,
+        dismissSheetPullNotification,
         googleSheetsSyncStatus,
         setGoogleSheetId,
         toggleGoogleSheetAutoSync,

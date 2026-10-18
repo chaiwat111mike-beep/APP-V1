@@ -13,15 +13,27 @@ import {
   Database,
   Cloud,
   Save,
-  RotateCcw
+  RotateCcw,
+  Sparkles,
+  FileSpreadsheet,
+  History,
+  ExternalLink,
+  Users,
+  Wrench,
+  Plus,
+  Trash2,
+  DollarSign
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
-import { GarageProfile } from '../types';
+import { GarageProfile, LaborServiceItem } from '../types';
+import { initialStandardLaborPresets } from '../data/initialData';
 import { GarageLogo } from './GarageLogo';
 import { PromptPayQRCard } from './PromptPayQRCard';
+import { MechanicManagerModal } from './MechanicManagerModal';
 
 export const SettingsView: React.FC = () => {
-  const { garageProfile, updateGarageProfile, syncStatus, isOnline } = useGarage();
+  const { garageProfile, updateGarageProfile, syncStatus, isOnline, mechanics } = useGarage();
+  const [isMechanicModalOpen, setIsMechanicModalOpen] = useState(false);
 
   const [formData, setFormData] = useState<GarageProfile>({
     name: garageProfile.name || 'อู่สงกรานต์ ออโต้เซอร์วิส',
@@ -34,9 +46,20 @@ export const SettingsView: React.FC = () => {
     bankAccountName: garageProfile.bankAccountName || 'สงกรานต์ ออโต้เซอร์วิส',
     bankAccountNumber: garageProfile.bankAccountNumber || '',
     warrantyTerms: garageProfile.warrantyTerms || 'รับประกันงานซ่อมและอะไหล่แท้ 3 เดือน หรือ 5,000 กิโลเมตร',
+    defaultLaborFee: garageProfile.defaultLaborFee ?? 400,
+    standardLaborPresets: garageProfile.standardLaborPresets && garageProfile.standardLaborPresets.length > 0 
+      ? garageProfile.standardLaborPresets 
+      : initialStandardLaborPresets,
     ...garageProfile,
   });
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [presetList, setPresetList] = useState<LaborServiceItem[]>(
+    garageProfile.standardLaborPresets && garageProfile.standardLaborPresets.length > 0
+      ? garageProfile.standardLaborPresets
+      : initialStandardLaborPresets
+  );
+  const [newPresetTitle, setNewPresetTitle] = useState('');
+  const [newPresetFee, setNewPresetFee] = useState<string>('');
 
   // Keep in sync if profile updates
   React.useEffect(() => {
@@ -53,12 +76,50 @@ export const SettingsView: React.FC = () => {
       bankAccountName: garageProfile.bankAccountName || '',
       bankAccountNumber: garageProfile.bankAccountNumber || '',
       warrantyTerms: garageProfile.warrantyTerms || '',
+      defaultLaborFee: garageProfile.defaultLaborFee ?? 400,
+      standardLaborPresets: garageProfile.standardLaborPresets && garageProfile.standardLaborPresets.length > 0
+        ? garageProfile.standardLaborPresets
+        : initialStandardLaborPresets,
     }));
+    if (garageProfile.standardLaborPresets && garageProfile.standardLaborPresets.length > 0) {
+      setPresetList(garageProfile.standardLaborPresets);
+    }
   }, [garageProfile]);
+
+  const handleAddPreset = () => {
+    if (!newPresetTitle.trim()) return;
+    const item: LaborServiceItem = {
+      id: `labor_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      title: newPresetTitle.trim(),
+      fee: Math.max(0, Number(newPresetFee) || 0),
+    };
+    const updated = [...presetList, item];
+    setPresetList(updated);
+    setFormData((prev) => ({ ...prev, standardLaborPresets: updated }));
+    updateGarageProfile({
+      ...formData,
+      standardLaborPresets: updated,
+    });
+    setNewPresetTitle('');
+    setNewPresetFee('');
+  };
+
+  const handleDeletePreset = (id: string) => {
+    const updated = presetList.filter((p) => p.id !== id);
+    setPresetList(updated);
+    setFormData((prev) => ({ ...prev, standardLaborPresets: updated }));
+    updateGarageProfile({
+      ...formData,
+      standardLaborPresets: updated,
+    });
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    updateGarageProfile(formData);
+    updateGarageProfile({
+      ...formData,
+      standardLaborPresets: presetList,
+    });
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
   };
@@ -272,6 +333,99 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
 
+        {/* Section 4: Standard Labor & Service Fees */}
+        <div className="bg-[#16191D] border border-[#2D3135] rounded-xl p-6 shadow-md space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#2D3135]">
+            <h2 className="text-xs font-bold text-orange-400 uppercase tracking-wider flex items-center gap-2">
+              <Wrench className="w-4 h-4" />
+              <span>4. กำหนดรายการค่าแรงและค่าบริการมาตรฐานประจำอู่ (Custom Labor & Services)</span>
+            </h2>
+            <span className="text-[11px] text-gray-400">
+              เจ้าของอู่กำหนดรายการและราคาเองได้อิสระ เพื่อใช้เรียกใช้รวดเร็วตอนเปิดใบสั่งซ่อม
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div>
+              <label className="block text-gray-300 font-medium mb-1">
+                ค่าแรงเริ่มต้นเมื่อเปิดใบสั่งซ่อม (บาท):
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={formData.defaultLaborFee ?? 400}
+                onChange={(e) => setFormData({ ...formData, defaultLaborFee: Number(e.target.value) })}
+                className="w-full px-3 py-2 bg-[#0F1113] border border-[#2D3135] rounded-lg text-white font-mono focus:outline-none focus:border-orange-500"
+              />
+              <p className="text-[11px] text-gray-500 mt-1">
+                กำหนดเป็น 0 ได้หากต้องการให้เริ่มต้นเป็นฟรีค่าแรง
+              </p>
+            </div>
+          </div>
+
+          {/* Preset Services List */}
+          <div className="space-y-3 pt-2">
+            <label className="block text-gray-200 font-bold text-xs">
+              รายการค่าบริการสำเร็จรูปของอู่ ({presetList.length} รายการ):
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {presetList.map((preset, pIdx) => (
+                <div
+                  key={preset.id || pIdx}
+                  className="flex items-center justify-between p-3 bg-[#0F1113] border border-[#2D3135] hover:border-orange-500/40 rounded-xl text-xs transition-all"
+                >
+                  <div className="flex-1 min-w-0 pr-2">
+                    <span className="font-semibold text-white block truncate">{preset.title}</span>
+                    <span className="text-[11px] font-mono text-emerald-400 font-bold">฿{Number(preset.fee || 0).toLocaleString()}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDeletePreset(preset.id)}
+                    className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                    title="ลบรายการนี้"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Add New Preset Row */}
+            <div className="p-3 bg-[#0F1113] border border-orange-500/30 rounded-xl space-y-2">
+              <span className="text-[11px] text-orange-400 font-bold block">
+                + เพิ่มรายการค่าบริการมาตรฐานใหม่:
+              </span>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="ชื่อบริการ/ค่าแรง เช่น เปลี่ยนถ่ายน้ำมันเกียร์, ล้างปีกผีเสื้อ, ซ่อมไดสตาร์ท..."
+                  value={newPresetTitle}
+                  onChange={(e) => setNewPresetTitle(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-xs text-white focus:outline-none focus:border-orange-500"
+                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="ราคา (บาท)"
+                    value={newPresetFee}
+                    onChange={(e) => setNewPresetFee(e.target.value)}
+                    className="w-28 px-3 py-2 bg-[#16191D] border border-[#2D3135] rounded-lg text-xs text-white font-mono focus:outline-none focus:border-orange-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddPreset}
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-lg flex items-center gap-1 active:scale-95 transition-all shrink-0 cursor-pointer shadow-md shadow-orange-500/20"
+                  >
+                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>เพิ่มรายการ</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Submit */}
         <div className="flex justify-end gap-3 pt-2">
           <button
@@ -284,6 +438,113 @@ export const SettingsView: React.FC = () => {
         </div>
 
       </form>
+
+      {/* Staff & Mechanics Management Section */}
+      <div className="bg-[#16191D] border border-orange-500/30 rounded-xl p-5 shadow-lg space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400">
+              <Users className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <span>จัดการทีมช่างซ่อมและบุคลากรประจำอู่ ({mechanics.length} ท่าน)</span>
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                เจ้าของอู่สามารถ เพิ่ม ลบ และแก้ไขรายชื่อช่าง เบอร์โทรศัพท์ และความเชี่ยวชาญได้โดยตรง
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsMechanicModalOpen(true)}
+            className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-md shadow-orange-500/20 active:scale-95 transition-all self-start sm:self-auto"
+          >
+            <Users className="w-4 h-4" />
+            <span>+ จัดการรายชื่อช่าง (เพิ่ม/ลบ/แก้ไข)</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2 border-t border-[#2D3135]">
+          {mechanics.slice(0, 3).map((mech, index) => (
+            <div key={mech.id} className="p-3 bg-[#0F1113] rounded-xl border border-[#2D3135] flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-white">{mech.name}</p>
+                <p className="text-[11px] text-gray-400 font-mono">{mech.phone} • {mech.positionTitle || 'ช่างประจำ'}</p>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                mech.status === 'available' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-orange-500/10 text-orange-400'
+              }`}>
+                {mech.status === 'available' ? 'พร้อมรับงาน' : 'กำลังซ่อม'}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Mechanic Manager Modal */}
+      <MechanicManagerModal
+        isOpen={isMechanicModalOpen}
+        onClose={() => setIsMechanicModalOpen(false)}
+      />
+
+      {/* System Version & What's New in v2.0 */}
+      <div className="bg-[#16191D] border border-emerald-500/30 rounded-xl p-5 shadow-lg space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>ระบบบริหารจัดการอู่ซ่อมรถยนต์ Songkarn Auto Service</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono font-black border border-emerald-500/40">
+                  เวอร์ชั่น 2.0.0 (ใหม่ล่าสุด)
+                </span>
+              </h2>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                อัปเดตระบบใหญ่ รองรับ 2-Way Google Sheets Live Pull & History Archive
+              </p>
+            </div>
+          </div>
+          <span className="text-[11px] text-gray-400 font-mono">
+            สถานะ: <strong className="text-emerald-400 font-bold">🟢 พร้อมใช้งานจริง (Production Ready)</strong>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-[#2D3135]">
+          <div className="p-3.5 bg-[#0F1113] rounded-xl border border-[#2D3135] space-y-1.5">
+            <div className="flex items-center gap-2 font-bold text-emerald-400 text-xs">
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>ดึงข้อมูล Google Sheets สด</span>
+            </div>
+            <p className="text-[11px] text-gray-300 leading-relaxed">
+              รองรับการอ่านและแสดงตารางข้อมูลจริงจาก Google Sheets ทุกแผ่นงาน พร้อมปุ่มนำเข้าข้อมูลกลับเข้าสู่ระบบอู่อัตโนมัติ
+            </p>
+          </div>
+
+          <div className="p-3.5 bg-[#0F1113] rounded-xl border border-[#2D3135] space-y-1.5">
+            <div className="flex items-center gap-2 font-bold text-blue-400 text-xs">
+              <History className="w-4 h-4" />
+              <span>คลังประวัติใบซ่อมย้อนหลัง</span>
+            </div>
+            <p className="text-[11px] text-gray-300 leading-relaxed">
+              เปิดดูประวัติงานซ่อมย้อนหลังตามทะเบียนรถ เลขที่ใบซ่อม หรือเบอร์โทร ดูอาการเดิม อะไหล่ที่เปลี่ยน และพิมพ์ใบเสร็จย้อนหลัง
+            </p>
+          </div>
+
+          <div className="p-3.5 bg-[#0F1113] rounded-xl border border-[#2D3135] space-y-1.5">
+            <div className="flex items-center gap-2 font-bold text-orange-400 text-xs">
+              <Database className="w-4 h-4" />
+              <span>Local-First & Firebase Sync</span>
+            </div>
+            <p className="text-[11px] text-gray-300 leading-relaxed">
+              ทำงานออฟไลน์ได้ 100% ข้อมูลไม่สูญหาย พร้อมระบบเชื่อมโยงคลาวด์ Firebase และ Google Drive อัตโนมัติ
+            </p>
+          </div>
+        </div>
+      </div>
 
     </div>
   );

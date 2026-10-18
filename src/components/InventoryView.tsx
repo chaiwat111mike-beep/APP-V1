@@ -18,7 +18,8 @@ import {
   Download,
   ExternalLink,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  ArrowDownCircle
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
 import { SparePart } from '../types';
@@ -34,7 +35,9 @@ export const InventoryView: React.FC = () => {
     deleteSparePart,
     restockPart,
     garageProfile,
-    syncWithGoogleSheets
+    syncWithGoogleSheets,
+    pullDataFromGoogleSheets,
+    isPullingSheets,
   } = useGarage();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -223,6 +226,17 @@ export const InventoryView: React.FC = () => {
     downloadCsvFile(`Songkarn-Inventory-${Date.now()}.csv`, [headers, ...rows]);
   };
 
+  const handleDirectPull = async () => {
+    setSyncFeedback('กำลังดึงข้อมูลสดจาก Google Sheets...');
+    const res = await pullDataFromGoogleSheets(true);
+    if (res && res.parts.length > 0) {
+      setSyncFeedback(`✅ ดึงและอัปเดตสต็อกอะไหล่สดสำเร็จ ${res.parts.length} รายการจาก Google Sheets เรียบร้อยแล้ว!`);
+      setTimeout(() => setSyncFeedback(null), 5000);
+    } else {
+      setIsSheetsModalOpen(true);
+    }
+  };
+
   return (
     <div className="space-y-6">
       
@@ -238,13 +252,25 @@ export const InventoryView: React.FC = () => {
               REAL-TIME SYNC
             </span>
           </div>
-          <p className="text-xs text-gray-400 mt-1">
-            มูลค่าทุนในคลัง: <strong className="text-gray-200 font-mono">฿{totalInventoryValue.toLocaleString()}</strong> (มูลค่าขาย ฿{totalSellValue.toLocaleString()}) • เชื่อมต่อ Google Sheets อัตโนมัติ
+          <p className="text-sm text-gray-300 mt-1">
+            มูลค่าทุนในคลัง: <strong className="text-white font-mono font-bold">฿{totalInventoryValue.toLocaleString()}</strong> (มูลค่าขาย ฿{totalSellValue.toLocaleString()}) • เชื่อมต่อ Google Sheets อัตโนมัติ
           </p>
         </div>
 
         {/* Action Toolbars */}
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          {/* Direct Pull / Fetch Live Sheet Button */}
+          <button
+            type="button"
+            disabled={isPullingSheets}
+            onClick={handleDirectPull}
+            title="ดึงข้อมูลสต็อกอะไหล่สดจาก Google Sheets มาแสดงผลและอัปเดตทันที"
+            className="px-4 py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/50 text-emerald-200 hover:text-white font-bold text-sm flex items-center gap-2 transition-all active:scale-95 shadow-md shadow-emerald-500/10 disabled:opacity-50"
+          >
+            <ArrowDownCircle className={`w-4 h-4 text-emerald-400 ${isPullingSheets ? 'animate-spin' : ''}`} />
+            <span>{isPullingSheets ? 'กำลังดึงข้อมูลชีต...' : 'ดึงข้อมูลจากชีต (Pull)'}</span>
+          </button>
+
           {/* Google Sheets Sync Trigger */}
           <button
             type="button"

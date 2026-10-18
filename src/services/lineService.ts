@@ -153,6 +153,7 @@ export const formatJobStatusThai = (status: JobOrder['status']): string => {
     case 'qc': return '🏁 ตรวจสอบคุณภาพ / ทดสอบวิ่ง (QC)';
     case 'completed': return '✅ ซ่อมเสร็จสมบูรณ์ / พร้อมส่งมอบ';
     case 'delivered': return '🎉 ส่งมอบรถเรียบร้อยแล้ว';
+    case 'closed': return '🏁 ปิดใบสั่งซ่อมสมบูรณ์';
     default: return status;
   }
 };

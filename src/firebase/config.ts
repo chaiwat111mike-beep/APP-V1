@@ -225,3 +225,32 @@ export async function testFirebaseConnection(): Promise<{
     };
   }
 }
+
+/**
+ * Recursively cleans data objects before sending to Firestore setDoc/updateDoc/addDoc.
+ * Firestore strictly rejects documents containing fields with value `undefined`.
+ * This helper strips any keys with `undefined` values at any depth.
+ */
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return null as any;
+  }
+  if (Array.isArray(data)) {
+    return data
+      .filter((item) => item !== undefined)
+      .map((item) => sanitizeForFirestore(item)) as any;
+  }
+  if (typeof data === 'object') {
+    if (data instanceof Date) {
+      return data.toISOString() as any;
+    }
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data as Record<string, any>)) {
+      if (value !== undefined) {
+        cleaned[key] = sanitizeForFirestore(value);
+      }
+    }
+    return cleaned as T;
+  }
+  return data;
+}

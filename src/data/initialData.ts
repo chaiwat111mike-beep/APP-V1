@@ -1,4 +1,15 @@
-import { JobOrder, SparePart, Customer, MechanicStaff, ServiceBay, GarageProfile } from '../types';
+import { JobOrder, SparePart, Customer, MechanicStaff, ServiceBay, GarageProfile, LaborServiceItem } from '../types';
+
+export const initialStandardLaborPresets: LaborServiceItem[] = [
+  { id: 'labor-1', title: 'เปลี่ยนถ่ายน้ำมันเครื่อง & ไส้กรอง', fee: 200 },
+  { id: 'labor-2', title: 'ตรวจเช็คระยะมาตรฐานรอบคัน (30 รายการ)', fee: 400 },
+  { id: 'labor-3', title: 'เปลี่ยนผ้าเบรกหน้า-หลัง & เจียรจาน', fee: 600 },
+  { id: 'labor-4', title: 'ซ่อมบำรุงช่วงล่าง & เปลี่ยนลูกหมาก', fee: 800 },
+  { id: 'labor-5', title: 'ล้างตู้แอร์ & เติมน้ำยาแอร์ R134a', fee: 900 },
+  { id: 'labor-6', title: 'สแกนโค้ด OBD-II & วิเคราะห์ระบบไฟ', fee: 300 },
+  { id: 'labor-7', title: 'ยกคลัตช์ / ยกเกียร์ / งานเครื่องยนต์หนัก', fee: 2500 },
+  { id: 'labor-8', title: 'บริการตรวจเช็คสภาพรถฟรี (โปรโมชั่น)', fee: 0 },
+];
 
 export const initialGarageProfile: GarageProfile = {
   name: 'อู่สงกรานต์ (ช่างไมค์)',
@@ -28,6 +39,8 @@ export const initialGarageProfile: GarageProfile = {
   googleSheetsCustomersId: '1XIH-RiKcciGRgWwNgQQ7ECsqnmMOX5pZNEAheJrtrYA',
   googleSheetsJobOrdersId: '1XIH-RiKcciGRgWwNgQQ7ECsqnmMOX5pZNEAheJrtrYA',
   autoSyncGoogleSheets: true,
+  standardLaborPresets: initialStandardLaborPresets,
+  defaultLaborFee: 400,
 };
 
 export const initialServiceBays: ServiceBay[] = [

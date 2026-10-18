@@ -83,8 +83,8 @@ export const GarageLogo: React.FC<GarageLogoProps> = ({
                 <span>{phone}</span>
               </p>
             </div>
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-yellow-400/10 text-yellow-400 font-bold border border-yellow-400/20 uppercase">
-              V1 LIVE
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-extrabold border border-emerald-500/30 uppercase tracking-wider">
+              V2.0 LIVE
             </span>
           </div>
         </div>
