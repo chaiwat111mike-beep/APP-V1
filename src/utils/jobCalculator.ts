@@ -56,7 +56,8 @@ export function calculateJobBreakdown(input: CalculationInput): CalculationBreak
   let discountPercent = 0;
 
   if (discountType === 'percent') {
-    discountPercent = Math.min(100, Math.max(0, Number(input.discountPercent) || 0));
+    const rawPercent = input.discountPercent !== undefined ? input.discountPercent : input.discount;
+    discountPercent = Math.min(100, Math.max(0, Number(rawPercent) || 0));
     discountAmount = Math.round(((grossSubtotal * discountPercent) / 100) * 100) / 100;
   } else {
     discountAmount = Math.min(grossSubtotal, Math.max(0, Number(input.discount) || 0));

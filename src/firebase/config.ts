@@ -229,7 +229,7 @@ export async function testFirebaseConnection(): Promise<{
 /**
  * Recursively cleans data objects before sending to Firestore setDoc/updateDoc/addDoc.
  * Firestore strictly rejects documents containing fields with value `undefined`.
- * This helper strips any keys with `undefined` values at any depth.
+ * This helper strips any keys with `undefined` values and ensures specific fields like email default to empty string.
  */
 export function sanitizeForFirestore<T>(data: T): T {
   if (data === null || data === undefined) {
@@ -246,11 +246,46 @@ export function sanitizeForFirestore<T>(data: T): T {
     }
     const cleaned: Record<string, any> = {};
     for (const [key, value] of Object.entries(data as Record<string, any>)) {
-      if (value !== undefined) {
-        cleaned[key] = sanitizeForFirestore(value);
+      if (value === undefined) {
+        // Explicitly default email to empty string if missing/undefined
+        if (key === 'email' || key === 'avatar' || key === 'positionTitle') {
+          cleaned[key] = '';
+        }
+        continue;
       }
+      cleaned[key] = sanitizeForFirestore(value);
     }
     return cleaned as T;
   }
   return data;
+}
+
+/**
+ * Specifically sanitizes a mechanic object for Firestore setDoc.
+ * Guarantees 'email', 'name', 'phone', 'positionTitle', and other fields are never undefined.
+ */
+export function sanitizeMechanicForFirestore(mech: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {
+    ...mech,
+    name: mech.name ? String(mech.name).trim() : '',
+    phone: mech.phone ? String(mech.phone).trim() : '',
+    email: mech.email !== undefined && mech.email !== null ? String(mech.email).trim() : '',
+    role: mech.role || 'mechanic',
+    positionTitle: mech.positionTitle !== undefined && mech.positionTitle !== null ? String(mech.positionTitle).trim() : '',
+    avatar: mech.avatar !== undefined && mech.avatar !== null ? String(mech.avatar).trim() : '',
+    specialties: Array.isArray(mech.specialties) && mech.specialties.length > 0 ? mech.specialties : ['งานซ่อมบำรุงทั่วไป'],
+    status: mech.status || 'available',
+    rating: mech.rating !== undefined && mech.rating !== null ? Number(mech.rating) || 5.0 : 5.0,
+    activeJobsCount: Number(mech.activeJobsCount) || 0,
+    completedJobsCount: Number(mech.completedJobsCount) || 0,
+  };
+
+  // Ensure no undefined keys remain
+  for (const [k, v] of Object.entries(result)) {
+    if (v === undefined) {
+      result[k] = '';
+    }
+  }
+
+  return sanitizeForFirestore(result);
 }

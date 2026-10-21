@@ -47,8 +47,8 @@ export const SparePartSearchSelect: React.FC<SparePartSearchSelectProps> = ({
     { id: 'filter', label: 'ไส้กรอง' },
     { id: 'brake', label: 'ระบบเบรก' },
     { id: 'suspension', label: 'ช่วงล่าง' },
-    { id: 'electrical', label: 'ไฟ/แบต' },
-    { id: 'tire', label: 'ยาง' },
+    { id: 'electrical', label: 'ระบบไฟ' },
+    { id: 'tire', label: 'วัสดุสิ้นเปลือง' },
   ];
 
   // Filtered parts based on search term & category

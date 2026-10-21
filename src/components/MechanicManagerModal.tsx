@@ -120,15 +120,13 @@ export const MechanicManagerModal: React.FC<MechanicManagerModalProps> = ({ isOp
       const mechUpdate: Partial<MechanicStaff> = {
         name: name.trim(),
         phone: phone.trim() || '061-069-2036',
+        email: email.trim() || '',
         role,
         positionTitle: positionTitle.trim() || (role === 'lead' ? 'หัวหน้าช่าง' : 'ช่างซ่อมบำรุง'),
         specialties: specialties.length > 0 ? specialties : ['งานซ่อมบำรุงทั่วไป'],
         status,
         rating: Number(rating) || 5.0,
       };
-      if (email.trim()) {
-        mechUpdate.email = email.trim();
-      }
       await updateMechanic(editingMechanic.id, mechUpdate);
       showNotification(`บันทึกข้อมูลของ "${name}" สำเร็จเรียบร้อย`);
       resetForm();
@@ -137,15 +135,13 @@ export const MechanicManagerModal: React.FC<MechanicManagerModalProps> = ({ isOp
       const newMechPayload: Omit<MechanicStaff, 'id' | 'activeJobsCount' | 'completedJobsCount'> = {
         name: name.trim(),
         phone: phone.trim() || '061-069-2036',
+        email: email.trim() || '',
         role,
         positionTitle: positionTitle.trim() || (role === 'lead' ? 'หัวหน้าช่าง' : 'ช่างเทคนิค'),
         specialties: specialties.length > 0 ? specialties : ['งานซ่อมบำรุงทั่วไป'],
         status,
         rating: Number(rating) || 5.0,
       };
-      if (email.trim()) {
-        newMechPayload.email = email.trim();
-      }
       await addMechanic(newMechPayload);
       showNotification(`เพิ่มรายชื่อช่าง "${name}" เข้าสู่ระบบสำเร็จ`);
       resetForm();

@@ -95,8 +95,8 @@ export const GarageLogo: React.FC<GarageLogoProps> = ({
   // 3. PRINT DOCUMENT VARIANT (Pure high-contrast styling for invoices, quotes, and work orders)
   if (variant === 'print') {
     return (
-      <div className={`flex items-center gap-3 border-r-2 border-slate-900 pr-5 ${className}`}>
-        <div className="h-14 max-w-[160px] rounded-lg overflow-hidden border border-slate-300 bg-white flex items-center justify-center p-0.5">
+      <div className={`flex items-center gap-3 border-r-2 border-black pr-5 ${className}`}>
+        <div className="h-14 max-w-[160px] rounded-lg overflow-hidden border-2 border-black bg-white flex items-center justify-center p-0.5">
           <img
             src={activeLogoImage}
             alt="โลโก้อู่สงกรานต์"
@@ -105,16 +105,16 @@ export const GarageLogo: React.FC<GarageLogoProps> = ({
           />
         </div>
         <div>
-          <div className="text-lg font-black text-slate-950 tracking-tight flex items-center gap-2">
+          <div className="text-lg font-black text-black tracking-tight flex items-center gap-2">
             <span>อู่สงกรานต์</span>
-            <span className="text-xs bg-amber-400 text-slate-950 px-2 py-0.5 rounded font-black">
+            <span className="text-xs bg-black text-white px-2 py-0.5 rounded font-black border border-black">
               {mechanicName}
             </span>
           </div>
-          <div className="text-xs font-bold text-slate-800 font-mono mt-0.5">
+          <div className="text-xs font-bold text-black font-mono mt-0.5">
             โทร: {phone}
           </div>
-          <div className="text-[11px] text-slate-600">
+          <div className="text-[11px] font-bold text-black">
             LINE: {garageProfile.lineId || 'chaiwatmike'}
           </div>
         </div>

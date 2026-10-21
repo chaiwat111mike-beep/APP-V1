@@ -74,8 +74,8 @@ export const InventoryView: React.FC = () => {
     { id: 'filter', label: 'ไส้กรอง' },
     { id: 'brake', label: 'ระบบเบรก' },
     { id: 'suspension', label: 'ช่วงล่าง & โช้ค' },
-    { id: 'electrical', label: 'แบตเตอรี่ & ระบบไฟ' },
-    { id: 'tire', label: 'ยางรถยนต์' },
+    { id: 'electrical', label: 'ระบบไฟ' },
+    { id: 'tire', label: 'วัสดุสิ้นเปลือง' },
     { id: 'other', label: 'อื่นๆ' },
   ];
 
@@ -556,8 +556,8 @@ export const InventoryView: React.FC = () => {
                     <option value="filter">ไส้กรอง</option>
                     <option value="brake">ระบบเบรก</option>
                     <option value="suspension">ช่วงล่าง & โช้ค</option>
-                    <option value="electrical">แบตเตอรี่ & ระบบไฟ</option>
-                    <option value="tire">ยางรถยนต์</option>
+                    <option value="electrical">ระบบไฟ</option>
+                    <option value="tire">วัสดุสิ้นเปลือง</option>
                     <option value="other">อื่นๆ</option>
                   </select>
                 </div>
@@ -783,8 +783,8 @@ export const InventoryView: React.FC = () => {
                     <option value="filter">ไส้กรอง</option>
                     <option value="brake">ระบบเบรก</option>
                     <option value="suspension">ช่วงล่าง & โช้ค</option>
-                    <option value="electrical">แบตเตอรี่ & ระบบไฟ</option>
-                    <option value="tire">ยางรถยนต์</option>
+                    <option value="electrical">ระบบไฟ</option>
+                    <option value="tire">วัสดุสิ้นเปลือง</option>
                     <option value="other">อื่นๆ</option>
                   </select>
                 </div>

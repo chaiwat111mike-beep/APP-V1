@@ -1,6 +1,6 @@
 {
-  "summary": "แผนการพัฒนาระบบกำหนดค่าแรง/ค่าบริการแบบกำหนดเอง (Custom Labor & Service Fee) และการตรวจสอบแก้ไข Code Error ให้พร้อมใช้งานจริง 100% ตามคำตอบที่ผู้ใช้งานเลือกในแบบสอบถาม",
-  "updatedAt": "2026-10-17T14:45:15.248943144Z",
-  "requestFeedback": true,
-  "userFacing": true
+  "summary":  "Implementation plan for transitioning Songkarn Garage into a production-ready Web Application with local offline-first persistence, 1-click JSON/Excel data backup and restore, and garage owner quick PIN security access.",
+  "updatedAt":  "2026-10-20T13:50:20.109561040Z",
+  "requestFeedback":  true,
+  "userFacing":  true
 }

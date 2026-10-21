@@ -300,6 +300,73 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
     setIsEditingNotes(false);
   };
 
+  const getStatusBadge = (status: JobStatus) => {
+    switch (status) {
+      case 'pending':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-yellow-500/20 text-yellow-300 border border-yellow-500/40">
+            <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
+            <span>รอดำเนินการ (Pending)</span>
+          </span>
+        );
+      case 'inspecting':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40">
+            <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+            <span>กำลังตรวจเช็ค (Inspecting)</span>
+          </span>
+        );
+      case 'waiting_parts':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+            <span>รออะไหล่ (Waiting Parts)</span>
+          </span>
+        );
+      case 'in_progress':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-orange-500/20 text-orange-300 border border-orange-500/40">
+            <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse"></span>
+            <span>กำลังซ่อม (In-Progress)</span>
+          </span>
+        );
+      case 'qc':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">
+            <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+            <span>ทดสอบ QC (Testing)</span>
+          </span>
+        );
+      case 'completed':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span>ซ่อมเสร็จแล้ว (Completed)</span>
+          </span>
+        );
+      case 'delivered':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+            <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+            <span>ส่งมอบแล้ว (Delivered)</span>
+          </span>
+        );
+      case 'closed':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-700/60 text-slate-200 border border-slate-600/60">
+            <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+            <span>🏁 ปิดใบซ่อม (Closed)</span>
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-gray-500/20 text-gray-300 border border-gray-500/30">
+            <span>{status}</span>
+          </span>
+        );
+    }
+  };
+
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
@@ -322,6 +389,8 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
                   <span className="text-xs px-2 py-0.5 rounded-lg bg-[#0F1113] text-gray-300 border border-[#2D3135] font-mono font-bold">
                     {job.jobNo}
                   </span>
+                  {/* Color-Coded Status Indicator Tag */}
+                  {getStatusBadge(job.status)}
                 </div>
                 <p className="text-xs text-gray-400 mt-0.5">
                   ลูกค้า: <strong className="text-gray-200">{job.customerName}</strong> ({job.customerPhone}) • ช่องซ่อม #{job.bayNumber || '-'} • ช่าง: {job.mechanicName || 'ยังไม่ระบุ'}
@@ -1095,21 +1164,66 @@ export const JobOrderDetailModal: React.FC<JobOrderDetailModalProps> = ({
                     </div>
                   </div>
 
-                  {/* VAT */}
-                  <div className="flex items-center justify-between text-gray-400 pt-1 border-t border-[#2D3135]">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={enableVatInput}
-                        onChange={(e) => {
-                          setEnableVatInput(e.target.checked);
-                          setTimeout(handleSaveFinancials, 50);
-                        }}
-                        className="accent-orange-500 rounded"
-                      />
-                      <span>ภาษี VAT ({vatPercentInput}%):</span>
-                    </label>
-                    <span className="font-mono">฿{financials.vatAmount.toLocaleString()}</span>
+                  {/* VAT Customizable Rate */}
+                  <div className="space-y-1 pt-1 border-t border-[#2D3135]">
+                    <div className="flex items-center justify-between text-gray-400">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={enableVatInput}
+                          onChange={(e) => {
+                            setEnableVatInput(e.target.checked);
+                            setTimeout(handleSaveFinancials, 50);
+                          }}
+                          className="accent-orange-500 rounded"
+                        />
+                        <span className={enableVatInput ? 'text-gray-200 font-medium' : 'text-gray-400'}>
+                          ภาษี VAT:
+                        </span>
+                      </label>
+
+                      <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-0.5 text-[10px]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEnableVatInput(false);
+                              setTimeout(handleSaveFinancials, 50);
+                            }}
+                            className={`px-1.5 py-0.5 rounded ${!enableVatInput ? 'bg-orange-500 text-white font-bold' : 'bg-[#16191D] text-gray-400'}`}
+                          >
+                            0%
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEnableVatInput(true);
+                              setVatPercentInput(7);
+                              setTimeout(handleSaveFinancials, 50);
+                            }}
+                            className={`px-1.5 py-0.5 rounded ${enableVatInput && vatPercentInput === 7 ? 'bg-orange-500 text-white font-bold' : 'bg-[#16191D] text-gray-400'}`}
+                          >
+                            7%
+                          </button>
+                        </div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          disabled={!enableVatInput}
+                          value={enableVatInput ? vatPercentInput : 0}
+                          onChange={(e) => setVatPercentInput(Math.max(0, Number(e.target.value)))}
+                          onBlur={handleSaveFinancials}
+                          className={`w-12 px-1.5 py-0.5 bg-[#16191D] border border-[#2D3135] rounded text-white font-mono text-xs text-center font-bold focus:outline-none focus:border-orange-500 ${
+                            !enableVatInput ? 'opacity-40 cursor-not-allowed' : ''
+                          }`}
+                        />
+                        <span className="text-gray-400 text-xs">%</span>
+                        <span className="font-mono text-white text-xs font-bold w-20 text-right">
+                          ฿{financials.vatAmount.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Grand Total */}

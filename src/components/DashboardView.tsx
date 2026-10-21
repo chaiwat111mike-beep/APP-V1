@@ -72,28 +72,74 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const getStatusBadge = (status: JobStatus) => {
     switch (status) {
       case 'pending':
-        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-yellow-500/20 text-yellow-300 border border-yellow-500/40">รอดำเนินการ</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-yellow-500/20 text-yellow-300 border border-yellow-500/40">
+            <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
+            <span>รอดำเนินการ (Pending)</span>
+          </span>
+        );
       case 'inspecting':
-        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40">กำลังตรวจเช็ค</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40">
+            <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+            <span>กำลังตรวจเช็ค (Inspecting)</span>
+          </span>
+        );
       case 'waiting_parts':
-        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">รออะไหล่</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+            <span>รออะไหล่ (Waiting Parts)</span>
+          </span>
+        );
       case 'in_progress':
-        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-orange-500/20 text-orange-300 border border-orange-500/40">กำลังซ่อม</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-orange-500/20 text-orange-300 border border-orange-500/40">
+            <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse"></span>
+            <span>กำลังซ่อม (In-Progress)</span>
+          </span>
+        );
       case 'qc':
-        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">ทดสอบ QC</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">
+            <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+            <span>ทดสอบ QC (Testing)</span>
+          </span>
+        );
       case 'completed':
-        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">ซ่อมเสร็จ / รอลูกค้า</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span>ซ่อมเสร็จแล้ว (Completed)</span>
+          </span>
+        );
       case 'delivered':
-        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">ส่งมอบแล้ว</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+            <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+            <span>ส่งมอบแล้ว (Delivered)</span>
+          </span>
+        );
       case 'closed':
-        return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">🏁 ปิดใบซ่อมแล้ว</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-700/60 text-slate-200 border border-slate-600/60">
+            <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+            <span>🏁 ปิดใบซ่อม (Closed)</span>
+          </span>
+        );
       default:
         return <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-gray-500/20 text-gray-300 border border-gray-500/30">{status}</span>;
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div
+      className="space-y-6"
+      style={{
+        width: '788.25px',
+        maxWidth: '100%',
+      }}
+    >
       
       {/* Official Garage Logo Banner */}
       <GarageLogo variant="banner" />

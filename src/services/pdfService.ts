@@ -182,7 +182,7 @@ export const printElementViaIframe = (elementOrId: string | HTMLElement, title?:
             body {
               font-family: 'Prompt', system-ui, -apple-system, sans-serif !important;
               background-color: #ffffff !important;
-              color: #0f172a !important;
+              color: #000000 !important;
               margin: 0;
               padding: 0;
               width: 100%;
@@ -192,7 +192,7 @@ export const printElementViaIframe = (elementOrId: string | HTMLElement, title?:
             }
           </style>
         </head>
-        <body class="bg-white text-slate-900">
+        <body class="bg-white text-black">
           <div style="padding: 10px; max-width: 100%;">
             ${htmlContent}
           </div>

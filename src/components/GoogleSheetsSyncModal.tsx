@@ -30,6 +30,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { useGarage } from '../context/GarageContext';
+import { loginWithGoogleFirebase } from '../firebase/config';
 import {
   createInventorySpreadsheet,
   createCustomersSpreadsheet,
@@ -284,7 +285,7 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     row.some((cell) => String(cell).toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  // 1. Action: Connect Google Account (GSI Token)
+  // 1. Action: Connect Google Account (GSI Token with Firebase fallback)
   const handleConnectGoogle = async () => {
     setIsConnectingGoogle(true);
     setErrorMessage(null);
@@ -296,7 +297,23 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
       setTimeout(() => setSuccessMessage(null), 4000);
       handleTestConnection(currentSheetId);
     } catch (err: any) {
-      setErrorMessage(`เชื่อมต่อ Google ไม่สำเร็จ: ${err.message || err}`);
+      console.warn('GSI popup attempt notice, trying Firebase popup fallback:', err);
+      try {
+        const fbRes = await loginWithGoogleFirebase();
+        if (fbRes.success && fbRes.accessToken) {
+          const email = getStoredGoogleEmail() || fbRes.user?.email || null;
+          setGoogleUserEmail(email);
+          setSuccessMessage('เชื่อมต่อบัญชี Google สำเร็จเรียบร้อยแล้ว!');
+          setTimeout(() => setSuccessMessage(null), 4000);
+          handleTestConnection(currentSheetId);
+          return;
+        }
+      } catch (fbErr) {
+        console.warn('Firebase fallback notice:', fbErr);
+      }
+      setErrorMessage(
+        'เบราว์เซอร์บล็อกหน้าต่างป๊อปอัป (Popup Blocked): กรุณากด "อนุญาตป๊อปอัป" (Allow Popups) ที่ Address Bar ด้านบน หรือใช้งานระบบดึงข้อมูลสด (Live Sheets) และปุ่ม "คัดลอกข้อมูลไปวางใน Google Sheets" ได้ทันที'
+      );
     } finally {
       setIsConnectingGoogle(false);
     }

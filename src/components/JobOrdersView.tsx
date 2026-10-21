@@ -78,6 +78,73 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
     { status: 'closed', title: '🏁 ปิดใบซ่อมแล้ว', color: 'border-emerald-500/40', badgeBg: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' },
   ];
 
+  const getStatusBadge = (status: JobStatus) => {
+    switch (status) {
+      case 'pending':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-yellow-500/15 text-yellow-300 border border-yellow-500/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse"></span>
+            <span>รอดำเนินการ (Pending)</span>
+          </span>
+        );
+      case 'inspecting':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-500/15 text-blue-300 border border-blue-500/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+            <span>ตรวจเช็ค (Inspecting)</span>
+          </span>
+        );
+      case 'waiting_parts':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/15 text-rose-300 border border-rose-500/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+            <span>รออะไหล่ (Waiting Parts)</span>
+          </span>
+        );
+      case 'in_progress':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-500/15 text-orange-300 border border-orange-500/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse"></span>
+            <span>กำลังซ่อม (In-Progress)</span>
+          </span>
+        );
+      case 'qc':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+            <span>ทดสอบ QC (Testing)</span>
+          </span>
+        );
+      case 'completed':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            <span>ซ่อมเสร็จ (Completed)</span>
+          </span>
+        );
+      case 'delivered':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/40">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+            <span>ส่งมอบแล้ว (Delivered)</span>
+          </span>
+        );
+      case 'closed':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-700/60 text-slate-200 border border-slate-600/60">
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+            <span>🏁 ปิดใบซ่อม (Closed)</span>
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-gray-500/15 text-gray-300 border border-gray-500/30">
+            <span>{status}</span>
+          </span>
+        );
+    }
+  };
+
   const getNextStatus = (current: JobStatus): JobStatus | null => {
     switch (current) {
       case 'pending': return 'inspecting';
@@ -331,14 +398,19 @@ export const JobOrdersView: React.FC<JobOrdersViewProps> = ({
                             className="p-3.5 bg-[#0F1113] hover:bg-[#1C2025] border border-[#2D3135] hover:border-orange-500/50 rounded-xl cursor-pointer shadow transition-all group"
                           >
                             {/* Card Top */}
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-bold text-orange-400 font-mono tracking-tight">{job.licensePlate}</span>
+                            <div className="flex items-center justify-between text-xs gap-2">
+                              <span className="font-bold text-orange-400 font-mono tracking-tight text-sm">{job.licensePlate}</span>
                               <span className="text-[10px] px-2 py-0.5 rounded bg-[#16191D] text-gray-300 border border-[#2D3135] font-mono font-semibold">
                                 {job.jobNo}
                               </span>
                             </div>
 
-                            <p className="text-xs font-semibold text-gray-200 mt-1">
+                            {/* Color-Coded Status Indicator Tag */}
+                            <div className="mt-2">
+                              {getStatusBadge(job.status)}
+                            </div>
+
+                            <p className="text-xs font-semibold text-gray-200 mt-1.5">
                               {job.carBrand} {job.carModel} {job.carYear ? `(${job.carYear})` : ''}
                             </p>
 

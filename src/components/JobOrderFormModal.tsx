@@ -1381,9 +1381,34 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                     </div>
                   </div>
 
-                  {/* VAT 7% Toggle */}
+                  {/* VAT Customizable Rate */}
                   <div>
-                    <label className="block text-gray-300 font-medium mb-1">ภาษีมูลค่าเพิ่ม (VAT)</label>
+                    <div className="flex items-center justify-between text-gray-300 font-medium mb-1">
+                      <label htmlFor="form-enable-vat" className="cursor-pointer">ภาษีมูลค่าเพิ่ม (VAT)</label>
+                      <div className="flex items-center gap-1 text-[10px]">
+                        <button
+                          type="button"
+                          onClick={() => setEnableVat(false)}
+                          className={`px-1.5 py-0.5 rounded ${!enableVat ? 'bg-orange-500 text-white font-bold' : 'bg-[#16191D] text-gray-400 hover:text-white'}`}
+                        >
+                          0%
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setEnableVat(true); setVatPercent(7); }}
+                          className={`px-1.5 py-0.5 rounded ${enableVat && vatPercent === 7 ? 'bg-orange-500 text-white font-bold' : 'bg-[#16191D] text-gray-400 hover:text-white'}`}
+                        >
+                          7%
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setEnableVat(true); setVatPercent(10); }}
+                          className={`px-1.5 py-0.5 rounded ${enableVat && vatPercent === 10 ? 'bg-orange-500 text-white font-bold' : 'bg-[#16191D] text-gray-400 hover:text-white'}`}
+                        >
+                          10%
+                        </button>
+                      </div>
+                    </div>
                     <div className="flex items-center gap-2 h-10 px-3 bg-[#16191D] border border-[#2D3135] rounded-lg">
                       <input
                         type="checkbox"
@@ -1392,11 +1417,23 @@ export const JobOrderFormModal: React.FC<JobOrderFormModalProps> = ({
                         onChange={(e) => setEnableVat(e.target.checked)}
                         className="w-4 h-4 accent-orange-500 rounded"
                       />
-                      <label htmlFor="form-enable-vat" className="text-gray-200 font-medium cursor-pointer text-xs flex-1">
-                        คิดภาษี VAT 7%
+                      <label htmlFor="form-enable-vat" className="text-gray-200 font-medium cursor-pointer text-xs shrink-0">
+                        คิด VAT
                       </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        disabled={!enableVat}
+                        value={enableVat ? vatPercent : 0}
+                        onChange={(e) => setVatPercent(Math.max(0, Number(e.target.value)))}
+                        className={`w-14 px-2 py-0.5 bg-[#0F1113] border border-[#2D3135] rounded text-white font-mono text-xs text-center font-bold focus:outline-none focus:border-orange-500 ${
+                          !enableVat ? 'opacity-40 cursor-not-allowed' : ''
+                        }`}
+                      />
+                      <span className="text-gray-400 text-xs">%</span>
                       {enableVat && (
-                        <span className="text-[11px] font-mono text-orange-400 font-bold">
+                        <span className="text-[11px] font-mono text-orange-400 font-bold ml-auto">
                           +฿{financials.vatAmount.toLocaleString()}
                         </span>
                       )}

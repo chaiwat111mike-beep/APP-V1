@@ -20,7 +20,7 @@ import {
   initialServiceBays,
   initialGarageProfile
 } from '../data/initialData';
-import { initializeGarageFirebase, sanitizeForFirestore } from '../firebase/config';
+import { initializeGarageFirebase, sanitizeForFirestore, sanitizeMechanicForFirestore } from '../firebase/config';
 import {
   collection,
   doc,
@@ -99,6 +99,9 @@ interface GarageContextType {
   // Bay & Mechanic operations
   assignJobToBay: (bayId: string, jobId: string | undefined) => Promise<void>;
   updateBayStatus: (bayId: string, status: ServiceBay['status']) => Promise<void>;
+  addServiceBay: (bayData: { name: string; type: ServiceBay['type'] }) => Promise<ServiceBay>;
+  updateServiceBay: (bayId: string, updates: Partial<ServiceBay>) => Promise<void>;
+  deleteServiceBay: (bayId: string) => Promise<void>;
   updateMechanicStatus: (mechanicId: string, status: MechanicStaff['status']) => Promise<void>;
   addMechanic: (mechanic: Omit<MechanicStaff, 'id' | 'activeJobsCount' | 'completedJobsCount'>) => Promise<MechanicStaff>;
   updateMechanic: (id: string, updates: Partial<MechanicStaff>) => Promise<void>;
@@ -144,7 +147,13 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [spareParts, setSpareParts] = useState<SparePart[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.PARTS);
-      return saved ? JSON.parse(saved) : initialSpareParts;
+      if (saved) {
+        const parsed: SparePart[] = JSON.parse(saved);
+        const existingIds = new Set(parsed.map((p) => p.id));
+        const missing = initialSpareParts.filter((p) => !existingIds.has(p.id));
+        return missing.length > 0 ? [...parsed, ...missing] : parsed;
+      }
+      return initialSpareParts;
     } catch {
       return initialSpareParts;
     }
@@ -165,15 +174,16 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.slice(0, 3).map((m: MechanicStaff, idx: number) => ({
+          return parsed.map((m: MechanicStaff, idx: number) => ({
             ...m,
+            email: m.email || '',
             positionTitle: m.positionTitle || initialMechanics[idx]?.positionTitle || `ตำแหน่งที่ ${idx + 1}`,
           }));
         }
       }
-      return initialMechanics.slice(0, 3);
+      return initialMechanics;
     } catch {
-      return initialMechanics.slice(0, 3);
+      return initialMechanics;
     }
   });
 
@@ -183,7 +193,7 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.filter((b: ServiceBay) => b.bayNumber <= 3);
+          return parsed;
         }
       }
       return initialServiceBays;
@@ -406,7 +416,10 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       } else if (e.key === STORAGE_KEYS.CUSTOMERS && e.newValue) {
         setCustomers(JSON.parse(e.newValue));
       } else if (e.key === STORAGE_KEYS.MECHANICS && e.newValue) {
-        setMechanics(JSON.parse(e.newValue).slice(0, 3));
+        const parsed = JSON.parse(e.newValue);
+        if (Array.isArray(parsed)) {
+          setMechanics(parsed.map((m: any) => ({ ...m, email: m.email || '' })));
+        }
       } else if (e.key === STORAGE_KEYS.BAYS && e.newValue) {
         setServiceBays(JSON.parse(e.newValue));
       }
@@ -1040,6 +1053,51 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     );
   };
 
+  const addServiceBay = async (bayData: { name: string; type: ServiceBay['type'] }): Promise<ServiceBay> => {
+    const nextNumber = serviceBays.length > 0 ? Math.max(...serviceBays.map((b) => b.bayNumber)) + 1 : 1;
+    const newBay: ServiceBay = {
+      id: `bay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      bayNumber: nextNumber,
+      name: bayData.name.trim() || `ช่องซ่อม ${nextNumber}`,
+      type: bayData.type || 'general',
+      status: 'available',
+    };
+    setServiceBays((prev) => {
+      const updated = [...prev, newBay];
+      try {
+        localStorage.setItem(STORAGE_KEYS.BAYS, JSON.stringify(updated));
+      } catch (e) {
+        console.warn('LocalStorage save bays error:', e);
+      }
+      return updated;
+    });
+    return newBay;
+  };
+
+  const updateServiceBay = async (bayId: string, updates: Partial<ServiceBay>) => {
+    setServiceBays((prev) => {
+      const updated = prev.map((b) => (b.id === bayId ? { ...b, ...updates } : b));
+      try {
+        localStorage.setItem(STORAGE_KEYS.BAYS, JSON.stringify(updated));
+      } catch (e) {
+        console.warn('LocalStorage save bays error:', e);
+      }
+      return updated;
+    });
+  };
+
+  const deleteServiceBay = async (bayId: string) => {
+    setServiceBays((prev) => {
+      const updated = prev.filter((b) => b.id !== bayId);
+      try {
+        localStorage.setItem(STORAGE_KEYS.BAYS, JSON.stringify(updated));
+      } catch (e) {
+        console.warn('LocalStorage save bays error:', e);
+      }
+      return updated;
+    });
+  };
+
   const updateMechanicStatus = async (mechanicId: string, status: MechanicStaff['status']) => {
     setMechanics((prev) => prev.map((m) => (m.id === mechanicId ? { ...m, status } : m)));
   };
@@ -1047,9 +1105,15 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const addMechanic = async (
     mechData: Omit<MechanicStaff, 'id' | 'activeJobsCount' | 'completedJobsCount'>
   ): Promise<MechanicStaff> => {
+    const sanitizedEmail = mechData.email !== undefined && mechData.email !== null ? String(mechData.email).trim() : '';
     const newMech: MechanicStaff = {
       ...mechData,
       id: `mech_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      name: mechData.name ? String(mechData.name).trim() : '',
+      phone: mechData.phone ? String(mechData.phone).trim() : '061-069-2036',
+      email: sanitizedEmail,
+      positionTitle: mechData.positionTitle !== undefined && mechData.positionTitle !== null ? String(mechData.positionTitle).trim() : '',
+      avatar: mechData.avatar || '',
       activeJobsCount: 0,
       completedJobsCount: 0,
       specialties: mechData.specialties && mechData.specialties.length > 0 ? mechData.specialties : ['งานซ่อมบำรุงทั่วไป'],
@@ -1069,7 +1133,8 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const { db } = initializeGarageFirebase();
     if (db) {
       try {
-        await setDoc(doc(db, 'mechanics', newMech.id), sanitizeForFirestore(newMech));
+        const sanitizedDoc = sanitizeMechanicForFirestore(newMech);
+        await setDoc(doc(db, 'mechanics', newMech.id), sanitizedDoc);
       } catch (e) {
         console.warn('Firestore setDoc mechanic error:', e);
       }
@@ -1079,7 +1144,14 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const updateMechanic = async (id: string, updates: Partial<MechanicStaff>) => {
     setMechanics((prev) => {
-      const updated = prev.map((m) => (m.id === id ? { ...m, ...updates } : m));
+      const updated = prev.map((m) => {
+        if (m.id === id) {
+          const merged = { ...m, ...updates };
+          if (merged.email === undefined || merged.email === null) merged.email = '';
+          return merged;
+        }
+        return m;
+      });
       try {
         localStorage.setItem(STORAGE_KEYS.MECHANICS, JSON.stringify(updated));
       } catch (e) {
@@ -1093,7 +1165,9 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       try {
         const found = mechanics.find((m) => m.id === id);
         if (found) {
-          await setDoc(doc(db, 'mechanics', id), sanitizeForFirestore({ ...found, ...updates }), { merge: true });
+          const merged = { ...found, ...updates };
+          const sanitizedDoc = sanitizeMechanicForFirestore(merged);
+          await setDoc(doc(db, 'mechanics', id), sanitizedDoc, { merge: true });
         }
       } catch (e) {
         console.warn('Firestore update mechanic error:', e);
@@ -1201,7 +1275,7 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             batch.set(doc(db, 'customers', c.id), sanitizeForFirestore(c));
           });
           mechanics.forEach((m) => {
-            batch.set(doc(db, 'mechanics', m.id), sanitizeForFirestore(m));
+            batch.set(doc(db, 'mechanics', m.id), sanitizeMechanicForFirestore(m));
           });
           serviceBays.forEach((b) => {
             batch.set(doc(db, 'service_bays', b.id), sanitizeForFirestore(b));
@@ -1238,6 +1312,15 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   const syncWithGoogleSheets = async (type: 'all' | 'inventory' | 'customers' | 'jobs' = 'all'): Promise<boolean> => {
+    const token = getStoredGoogleToken();
+    if (!token) {
+      setGoogleSheetsSyncStatus((prev) => ({
+        ...prev,
+        syncing: false,
+        error: 'ยังไม่ได้เชื่อมต่อบัญชี Google: กรุณากดปุ่ม "เชื่อมต่อบัญชี Google" ในหน้าต่างจัดการชีตก่อนซิงค์',
+      }));
+      return false;
+    }
     setGoogleSheetsSyncStatus((prev) => ({ ...prev, syncing: true, error: null }));
     try {
       const targetId = googleSheetsSyncStatus.spreadsheetId || TARGET_SPREADSHEET_ID;
@@ -1424,6 +1507,9 @@ export const GarageProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         importCustomers,
         assignJobToBay,
         updateBayStatus,
+        addServiceBay,
+        updateServiceBay,
+        deleteServiceBay,
         updateMechanicStatus,
         addMechanic,
         updateMechanic,

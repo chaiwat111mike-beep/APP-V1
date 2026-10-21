@@ -390,9 +390,9 @@ export const createInventorySpreadsheet = async (
   garageName: string = 'อู่สงกรานต์ ช่างไมค์ 061-069-2036',
   parts: SparePart[]
 ): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> => {
-  let token = getStoredGoogleToken();
+  const token = getStoredGoogleToken();
   if (!token) {
-    token = await requestGoogleOAuthToken();
+    throw new Error('ยังไม่ได้เชื่อมต่อบัญชี Google: กรุณากดปุ่ม "เชื่อมต่อบัญชี Google" ก่อนดำเนินการ หรือใช้ปุ่ม "คัดลอกข้อมูลไปวางใน Google Sheets" ได้ทันที');
   }
 
   const title = `[อู่สงกรานต์] สต็อกอะไหล่รถยนต์ (Auto Parts Inventory) - ${new Date().toLocaleDateString('th-TH')}`;
@@ -505,9 +505,9 @@ export const createCustomersSpreadsheet = async (
   garageName: string = 'อู่สงกรานต์ ช่างไมค์ 061-069-2036',
   customers: Customer[]
 ): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> => {
-  let token = getStoredGoogleToken();
+  const token = getStoredGoogleToken();
   if (!token) {
-    token = await requestGoogleOAuthToken();
+    throw new Error('ยังไม่ได้เชื่อมต่อบัญชี Google: กรุณากดปุ่ม "เชื่อมต่อบัญชี Google" ก่อนดำเนินการ หรือใช้ปุ่ม "คัดลอกข้อมูลไปวางใน Google Sheets" ได้ทันที');
   }
 
   const title = `[อู่สงกรานต์] ประวัติลูกค้าและข้อมูลรถยนต์ (Customers & Vehicles CRM) - ${new Date().toLocaleDateString('th-TH')}`;
@@ -641,9 +641,9 @@ export const syncInventoryToGoogleSheet = async (
   spreadsheetId: string,
   parts: SparePart[]
 ): Promise<boolean> => {
-  let token = getStoredGoogleToken();
+  const token = getStoredGoogleToken();
   if (!token) {
-    token = await requestGoogleOAuthToken();
+    throw new Error('ยังไม่ได้เชื่อมต่อบัญชี Google: กรุณากดปุ่ม "เชื่อมต่อบัญชี Google" ก่อนซิงค์');
   }
 
   const targetSheetTitle = await resolveSheetRange(token, spreadsheetId, 'คลังสต็อกอะไหล่');
@@ -729,9 +729,9 @@ export const syncCustomersToGoogleSheet = async (
   spreadsheetId: string,
   customers: Customer[]
 ): Promise<boolean> => {
-  let token = getStoredGoogleToken();
+  const token = getStoredGoogleToken();
   if (!token) {
-    token = await requestGoogleOAuthToken();
+    throw new Error('ยังไม่ได้เชื่อมต่อบัญชี Google: กรุณากดปุ่ม "เชื่อมต่อบัญชี Google" ก่อนซิงค์');
   }
 
   const targetSheetTitle = await resolveSheetRange(token, spreadsheetId, 'ประวัติลูกค้าและรถยนต์');
@@ -839,9 +839,9 @@ export const syncJobOrdersToGoogleSheet = async (
   spreadsheetId: string,
   jobs: JobOrder[]
 ): Promise<boolean> => {
-  let token = getStoredGoogleToken();
+  const token = getStoredGoogleToken();
   if (!token) {
-    token = await requestGoogleOAuthToken();
+    throw new Error('ยังไม่ได้เชื่อมต่อบัญชี Google: กรุณากดปุ่ม "เชื่อมต่อบัญชี Google" ก่อนซิงค์');
   }
 
   const targetSheetTitle = await resolveSheetRange(token, spreadsheetId, 'ใบสั่งซ่อมและสถานะ');
@@ -968,9 +968,9 @@ export const syncFinancialSummaryToGoogleSheet = async (
   jobs: JobOrder[],
   parts: SparePart[]
 ): Promise<boolean> => {
-  let token = getStoredGoogleToken();
+  const token = getStoredGoogleToken();
   if (!token) {
-    token = await requestGoogleOAuthToken();
+    throw new Error('ยังไม่ได้เชื่อมต่อบัญชี Google: กรุณากดปุ่ม "เชื่อมต่อบัญชี Google" ก่อนซิงค์');
   }
 
   const targetSheetTitle = await resolveSheetRange(token, spreadsheetId, 'สรุปภาพรวมและการเงิน');
@@ -1042,10 +1042,18 @@ export const syncAllToGoogleSheet = async (
     jobOrders: JobOrder[];
   }
 ): Promise<{ success: boolean; syncedTabs: string[]; errors: string[] }> => {
+  const targetId = spreadsheetId || TARGET_SPREADSHEET_ID;
+  const token = getStoredGoogleToken();
+  if (!token) {
+    return {
+      success: false,
+      syncedTabs: [],
+      errors: ['ยังไม่ได้เชื่อมต่อบัญชี Google: กรุณาคลิกปุ่ม "เชื่อมต่อบัญชี Google" ด้านบนก่อนซิงค์'],
+    };
+  }
+
   const syncedTabs: string[] = [];
   const errors: string[] = [];
-
-  const targetId = spreadsheetId || TARGET_SPREADSHEET_ID;
 
   // 1. Inventory Tab
   try {
@@ -1103,9 +1111,9 @@ export const readSheetValues = async (
   spreadsheetId: string,
   sheetTitle: string
 ): Promise<any[][]> => {
-  let token = getStoredGoogleToken();
+  const token = getStoredGoogleToken();
   if (!token) {
-    token = await requestGoogleOAuthToken();
+    throw new Error('ยังไม่ได้เชื่อมต่อบัญชี Google (ไม่พบ Token): กรุณากดปุ่ม "เชื่อมต่อบัญชี Google" ก่อน');
   }
 
   const range = encodeURIComponent(`'${sheetTitle}'!A1:Z1000`);
