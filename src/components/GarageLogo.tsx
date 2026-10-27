@@ -92,31 +92,18 @@ export const GarageLogo: React.FC<GarageLogoProps> = ({
     );
   }
 
-  // 3. PRINT DOCUMENT VARIANT (Pure high-contrast styling for invoices, quotes, and work orders)
+  // 3. PRINT DOCUMENT VARIANT (Prominent vibrant circular emblem with golden ring)
   if (variant === 'print') {
+    const emblemSrc = garageEmblemLogo || garageProfile.logoImage || garageBannerLogo;
     return (
-      <div className={`flex items-center gap-3 border-r-2 border-black pr-5 ${className}`}>
-        <div className="h-14 max-w-[160px] rounded-lg overflow-hidden border-2 border-black bg-white flex items-center justify-center p-0.5">
+      <div className={`flex items-center shrink-0 my-auto ${className}`}>
+        <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-full overflow-hidden border-2 border-amber-400 bg-black shadow-md flex items-center justify-center p-0.5 ring-2 ring-amber-400/50">
           <img
-            src={activeLogoImage}
+            src={emblemSrc}
             alt="โลโก้อู่สงกรานต์"
             referrerPolicy="no-referrer"
-            className="h-full w-auto object-contain"
+            className="h-full w-full object-cover"
           />
-        </div>
-        <div>
-          <div className="text-lg font-black text-black tracking-tight flex items-center gap-2">
-            <span>อู่สงกรานต์</span>
-            <span className="text-xs bg-black text-white px-2 py-0.5 rounded font-black border border-black">
-              {mechanicName}
-            </span>
-          </div>
-          <div className="text-xs font-bold text-black font-mono mt-0.5">
-            โทร: {phone}
-          </div>
-          <div className="text-[11px] font-bold text-black">
-            LINE: {garageProfile.lineId || 'chaiwatmike'}
-          </div>
         </div>
       </div>
     );

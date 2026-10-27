@@ -30,7 +30,7 @@ export interface JobPartItem {
   partName: string;
   quantity: number;
   unitPrice: number;
-  costPrice: number;
+  costPrice?: number;
   totalPrice: number;
 }
 

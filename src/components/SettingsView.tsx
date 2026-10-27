@@ -42,7 +42,6 @@ export const SettingsView: React.FC = () => {
     garageProfile,
     updateGarageProfile,
     syncStatus,
-    isOnline,
     mechanics,
     jobOrders,
     spareParts,
@@ -317,12 +316,12 @@ export const SettingsView: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <span className={`text-xs px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 ${
-            syncStatus === 'synced' || syncStatus === 'offline_synced'
+            syncStatus.connected
               ? 'bg-green-500/10 text-green-400 border border-green-500/20'
               : 'bg-orange-500/10 text-orange-400 border border-orange-500/20'
           }`}>
             <Database className="w-3.5 h-3.5" />
-            <span>สถานะระบบ: {syncStatus === 'offline_synced' ? 'Local-First DB ทำงานสมบูรณ์' : 'Firebase Sync Real-time'}</span>
+            <span>สถานะระบบ: {syncStatus.mode === 'firestore' ? 'Firebase Firestore Real-time' : 'Local-First DB ทำงานสมบูรณ์'}</span>
           </span>
         </div>
       </div>

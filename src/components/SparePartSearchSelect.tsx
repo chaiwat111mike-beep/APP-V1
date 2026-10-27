@@ -179,7 +179,10 @@ export const SparePartSearchSelect: React.FC<SparePartSearchSelectProps> = ({
 
       {/* Dropdown Options List */}
       {isOpen && (
-        <div className="absolute left-0 right-0 top-full mt-1.5 bg-[#16191D] border border-[#2D3135] rounded-xl shadow-2xl z-50 overflow-hidden text-xs max-h-[380px] flex flex-col backdrop-blur-md">
+        <div
+          style={{ width: '600.635px', height: '400px', maxWidth: 'calc(100vw - 2rem)' }}
+          className="absolute left-0 top-full mt-1.5 bg-[#16191D] border border-[#2D3135] rounded-xl shadow-2xl z-50 overflow-hidden text-xs flex flex-col backdrop-blur-md"
+        >
           {/* Quick Category Chips */}
           <div className="p-2 border-b border-[#2D3135] bg-[#121417] flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             {categories.map((cat) => (

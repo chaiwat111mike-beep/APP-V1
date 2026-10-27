@@ -126,7 +126,7 @@
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm;
+    margin: 5mm 6mm;
   }
   
   html, body {
@@ -134,7 +134,20 @@
     color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
-    font-size: 12px !important;
+    font-size: 11px !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Reset modal overlays and wrappers when printing */
+  .fixed, [class*="max-h-"], [class*="overflow-"] {
+    position: static !important;
+    overflow: visible !important;
+    max-height: none !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
   }
 
   /* Hide entire app shell during print and show only printable document */
@@ -153,30 +166,22 @@
     top: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
+    min-height: auto !important;
+    max-height: none !important;
     margin: 0 !important;
-    padding: 10px !important;
-    background: #ffffff !important;
-    color: #000000 !important;
+    padding: 0 !important;
     border: none !important;
     box-shadow: none !important;
+    page-break-after: avoid !important;
+    page-break-before: avoid !important;
+    break-inside: avoid !important;
   }
 
-  #printable-document-content p,
-  #printable-document-content span:not(.text-white),
-  #printable-document-content td,
-  #printable-document-content th,
-  #printable-document-content strong {
-    color: #000000 !important;
-  }
-
-  #printable-document-content .text-white {
-    color: #ffffff !important;
-  }
-
-  /* Force exact color adjustment */
+  /* Force exact color adjustment to print vibrant background colors, borders and text */
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+    color-adjust: exact !important;
   }
 
   .no-print {
@@ -193,47 +198,5 @@
   color: #000000;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-#printable-document-content th,
-#printable-document-content td {
-  color: #000000;
-}
-
-div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) {
-  height: 300.274px;
-  width: 500.413px;
-}
-
-div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) {
-  width: 500.413px;
-  padding-top: 0px;
-  padding-left: 0px;
-  padding-bottom: 0px;
-  padding-right: 0px;
-}
-
-div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) {
-  width: 500.635px;
-}
-
-div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) {
-  width: 300.625px;
-}
-
-div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(1) {
-  padding-left: -8px;
-  padding-right: -7px;
-  padding-bottom: -9px;
-  padding-top: -9px;
-  width: 880.767px;
-  height: 250.795px;
-}
-
-div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) {
-  padding-left: 50px;
-  padding-top: 30px;
-  padding-bottom: 30px;
-  padding-right: 50px;
 }
 

@@ -114,7 +114,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     <>
       <header className="sticky top-0 z-30 bg-[#16191D] border-b border-[#2D3135] text-gray-100 shadow-md">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 gap-3 sm:gap-4">
+          <div className="flex items-center justify-between h-14 gap-3 sm:gap-4">
             
             {/* Mobile menu toggle & Logo Branding */}
             <div className="flex items-center gap-2 sm:gap-3">

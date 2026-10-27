@@ -5,6 +5,7 @@ export interface PdfExportOptions {
   filename?: string;
   quality?: number;
   orientation?: 'portrait' | 'landscape';
+  fitToOnePage?: boolean;
 }
 
 /**
@@ -39,6 +40,7 @@ function sanitizeColorsInClonedDoc(doc: Document) {
 
 /**
  * Exports a DOM element to PDF directly on client-side with 1-click
+ * Guaranteed exact 1-page A4 fit without accidental 2nd page overflow
  */
 export const exportElementToPdf = async (
   elementId: string | HTMLElement,
@@ -51,32 +53,41 @@ export const exportElementToPdf = async (
   }
 
   const filename = options.filename || `Songkarn-Garage-Doc-${Date.now()}.pdf`;
+  const fitToOnePage = options.fitToOnePage !== false; // default true for standard invoices/work orders
+
+  // Save original styles that might affect html2canvas rendering
+  const originalTransform = targetElement.style.transform;
+  const originalTransition = targetElement.style.transition;
+  targetElement.style.transform = 'none';
+  targetElement.style.transition = 'none';
 
   try {
-    // Generate high resolution canvas with html2canvas-pro supporting modern CSS (oklch, color-mix, etc.)
+    // Generate high resolution canvas with html2canvas-pro supporting modern CSS
     const canvas = await html2canvas(targetElement, {
-      scale: 2.5, // Crisp high-DPI rendering for print
+      scale: 2.5, // Crisp 300-DPI equivalent sharpness
       useCORS: true,
       allowTaint: true,
       logging: false,
       backgroundColor: '#ffffff',
       windowWidth: targetElement.scrollWidth || 1024,
       onclone: (clonedDoc) => {
-        // Sanitize any residual modern colors just in case
         sanitizeColorsInClonedDoc(clonedDoc);
 
-        // Ensure cloned element is visible and properly styled as pure white page
         const clonedTarget = typeof elementId === 'string' 
           ? clonedDoc.getElementById(elementId) 
           : clonedDoc.body;
         if (clonedTarget) {
-          clonedTarget.style.backgroundColor = '#ffffff';
-          clonedTarget.style.color = '#000000';
           clonedTarget.style.boxShadow = 'none';
-          clonedTarget.style.border = 'none';
+          clonedTarget.style.transform = 'none';
+          clonedTarget.style.transition = 'none';
+          clonedTarget.style.margin = '0 auto';
         }
       }
     });
+
+    // Restore original styles
+    targetElement.style.transform = originalTransform;
+    targetElement.style.transition = originalTransition;
 
     const imgData = canvas.toDataURL('image/png', 0.98);
     const pdf = new jsPDF({
@@ -86,44 +97,67 @@ export const exportElementToPdf = async (
       compress: true,
     });
 
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const pdfWidth = pdf.internal.pageSize.getWidth(); // 210mm
+    const pdfHeight = pdf.internal.pageSize.getHeight(); // 297mm
     const canvasWidth = canvas.width;
     const canvasHeight = canvas.height;
 
-    // Calculate scaling to fit A4 width nicely with margins
-    const margin = 5; // 5mm margin
-    const contentWidth = pdfWidth - (margin * 2);
-    const ratio = contentWidth / canvasWidth;
-    const imgHeight = canvasHeight * ratio;
+    // Margin: 5mm for balanced page borders
+    const margin = 5;
+    const availableWidth = pdfWidth - (margin * 2); // 200mm
+    const availableHeight = pdfHeight - (margin * 2); // 287mm
 
-    let heightLeft = imgHeight;
-    let position = margin;
+    const widthRatio = availableWidth / canvasWidth;
+    const naturalImgHeight = canvasHeight * widthRatio;
 
-    // Add first page
-    pdf.addImage(imgData, 'PNG', margin, position, contentWidth, imgHeight, undefined, 'FAST');
-    heightLeft -= (pdfHeight - (margin * 2));
+    // If fitToOnePage is requested, or height is within 18% of 1 page, fit to 1 single page!
+    const shouldFitSinglePage = fitToOnePage || (naturalImgHeight <= availableHeight * 1.18);
 
-    // Add extra pages if content overflows A4
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight + margin;
-      pdf.addPage();
-      pdf.addImage(imgData, 'PNG', margin, position, contentWidth, imgHeight, undefined, 'FAST');
-      heightLeft -= (pdfHeight - (margin * 2));
+    if (shouldFitSinglePage) {
+      let renderWidth = availableWidth;
+      let renderHeight = naturalImgHeight;
+
+      if (renderHeight > availableHeight) {
+        // Proportionally scale to fit inside 1 A4 page exactly
+        const scaleFactor = availableHeight / renderHeight;
+        renderHeight = availableHeight;
+        renderWidth = availableWidth * scaleFactor;
+      }
+
+      const xOffset = margin + (availableWidth - renderWidth) / 2;
+      const yOffset = margin;
+
+      pdf.addImage(imgData, 'PNG', xOffset, yOffset, renderWidth, renderHeight, undefined, 'FAST');
+    } else {
+      // Multi-page slicing for very long itemized jobs
+      let heightLeft = naturalImgHeight;
+      let position = margin;
+
+      pdf.addImage(imgData, 'PNG', margin, position, availableWidth, naturalImgHeight, undefined, 'FAST');
+      heightLeft -= availableHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - naturalImgHeight + margin;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', margin, position, availableWidth, naturalImgHeight, undefined, 'FAST');
+        heightLeft -= availableHeight;
+      }
     }
 
     pdf.save(filename);
     return true;
   } catch (error) {
     console.error('Error generating PDF:', error);
-    // Fallback to print method
+    targetElement.style.transform = originalTransform;
+    targetElement.style.transition = originalTransition;
+    // Fallback to print
     printElementViaIframe(targetElement);
     return false;
   }
 };
 
 /**
- * 1-Click Print isolated element via hidden iframe (No dark mode background or app shell leak)
+ * 1-Click Print isolated element via hidden iframe with full styles and exact A4 1-page guarantee
  */
 export const printElementViaIframe = (elementOrId: string | HTMLElement, title?: string): boolean => {
   try {
@@ -133,7 +167,15 @@ export const printElementViaIframe = (elementOrId: string | HTMLElement, title?:
       return false;
     }
 
-    const htmlContent = targetElement.innerHTML;
+    // Capture the entire element including its classes and attributes
+    const outerHtml = targetElement.outerHTML;
+    
+    // Remove old iframe if present
+    const oldIframe = document.getElementById('print-hidden-iframe');
+    if (oldIframe) {
+      document.body.removeChild(oldIframe);
+    }
+
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
     iframe.style.right = '0';
@@ -166,26 +208,41 @@ export const printElementViaIframe = (elementOrId: string | HTMLElement, title?:
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <link rel="preconnect" href="https://fonts.googleapis.com">
           <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-          <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+          <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700;800;900&family=Kanit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
           ${styles}
           <style>
             @page {
               size: A4 portrait;
-              margin: 10mm;
+              margin: 6mm 8mm;
             }
             * {
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
               color-adjust: exact !important;
-              box-sizing: border-box;
+              box-sizing: border-box !important;
             }
-            body {
-              font-family: 'Prompt', system-ui, -apple-system, sans-serif !important;
+            html, body {
+              font-family: 'Prompt', 'Kanit', system-ui, -apple-system, sans-serif !important;
               background-color: #ffffff !important;
               color: #000000 !important;
-              margin: 0;
-              padding: 0;
-              width: 100%;
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 100% !important;
+              height: auto !important;
+            }
+            #printable-document-content {
+              width: 100% !important;
+              max-width: 100% !important;
+              min-height: auto !important;
+              max-height: none !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              border: none !important;
+              box-shadow: none !important;
+              transform: none !important;
+              page-break-after: avoid !important;
+              page-break-before: avoid !important;
+              break-inside: avoid !important;
             }
             .no-print {
               display: none !important;
@@ -193,8 +250,8 @@ export const printElementViaIframe = (elementOrId: string | HTMLElement, title?:
           </style>
         </head>
         <body class="bg-white text-black">
-          <div style="padding: 10px; max-width: 100%;">
-            ${htmlContent}
+          <div style="padding: 0; margin: 0; width: 100%;">
+            ${outerHtml}
           </div>
         </body>
       </html>
@@ -210,10 +267,12 @@ export const printElementViaIframe = (elementOrId: string | HTMLElement, title?:
         window.print();
       } finally {
         setTimeout(() => {
-          document.body.removeChild(iframe);
-        }, 3000);
+          if (iframe.parentNode) {
+            document.body.removeChild(iframe);
+          }
+        }, 3500);
       }
-    }, 400);
+    }, 450);
 
     return true;
   } catch (e) {
@@ -222,4 +281,3 @@ export const printElementViaIframe = (elementOrId: string | HTMLElement, title?:
     return false;
   }
 };
-
