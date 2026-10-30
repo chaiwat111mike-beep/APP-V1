@@ -244,6 +244,9 @@ export const printElementViaIframe = (elementOrId: string | HTMLElement, title?:
               page-break-before: avoid !important;
               break-inside: avoid !important;
             }
+            #printable-document-content table tbody td {
+              color: #000000 !important;
+            }
             .no-print {
               display: none !important;
             }

@@ -53,14 +53,14 @@
   }
 
   th {
-    color: #ffffff !important;
-    font-weight: 800 !important;
-    font-size: 13.5px !important;
+    color: #ffffff;
+    font-weight: 800;
+    font-size: 13.5px;
     letter-spacing: 0.02em;
   }
 
   td {
-    color: #f8fafc !important;
+    color: #f8fafc;
     font-weight: 500;
     font-size: 14.5px;
   }
@@ -193,10 +193,14 @@
   }
 }
 
-/* Document Paper Crisp Typography for Screen Preview */
+/* Document Paper Crisp Typography for Screen Preview & Print */
 #printable-document-content {
   color: #000000;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+#printable-document-content table tbody td {
+  color: #000000 !important;
 }
 

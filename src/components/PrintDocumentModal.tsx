@@ -562,11 +562,13 @@ ${financials.otherFee > 0 ? `ค่าบริการอื่นๆ: ฿${fi
                         </tr>
                       )}
                       
-                      {/* แถวรายการอะไหล่: ตัวเลขและตัวหนังสือสีดำเข้มชัดเจน อ่านง่าย */}
+                      {/* แถวรายการอะไหล่: ตัวเลขและตัวหนังสือสีดำเข้มชัดเจน อ่านง่าย บนพื้นกระดาษขาว A4 */}
                       {(job.partsUsed || []).map((p, idx) => (
-                        <tr key={p.partId || idx} className={idx % 2 === 1 ? 'bg-sky-50/40' : 'bg-white'}>
-                          <td className="py-1.5 px-2 text-center font-mono font-black border-r border-slate-300" style={{ color: '#06090d' }}>{idx + 1}</td>
-                          <td className="py-1.5 px-3 border-r border-slate-300">
+                        <tr key={p.partId || idx} className="bg-white">
+                          <td className="py-1.5 px-2 text-center font-mono font-black border-r border-slate-300 text-black" style={{ color: '#000000' }}>
+                            <span className="font-mono font-black text-black inline-block" style={{ color: '#000000' }}>{idx + 1}</span>
+                          </td>
+                          <td className="py-1.5 px-3 border-r border-slate-300 text-black">
                             <span className="font-black text-black block text-xs leading-snug">{p.partName}</span>
                             {p.partCode && (
                               <span className="text-[10px] text-black font-mono font-black block mt-0.5">
@@ -574,20 +576,20 @@ ${financials.otherFee > 0 ? `ค่าบริการอื่นๆ: ฿${fi
                               </span>
                             )}
                           </td>
-                          <td className="py-1.5 px-2 text-center font-mono font-black text-xs border-r border-slate-300" style={{ color: '#06090d' }}>{p.quantity}</td>
-                          <td className="py-1.5 px-3 text-right font-mono font-black text-xs border-r border-slate-300" style={{ color: '#06090d' }}>
+                          <td className="py-1.5 px-2 text-center font-mono font-black text-xs border-r border-slate-300 text-black" style={{ color: '#000000' }}>{p.quantity}</td>
+                          <td className="py-1.5 px-3 text-right font-mono font-black text-xs border-r border-slate-300 text-black" style={{ color: '#000000' }}>
                             {(p.unitPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
-                          <td className="py-1.5 px-3 text-right font-mono font-normal text-xs" style={{ color: '#06090d', fontWeight: 'normal' }}>
+                          <td className="py-1.5 px-3 text-right font-mono font-black text-xs text-black" style={{ color: '#000000' }}>
                             {(p.totalPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                         </tr>
                       ))}
 
-                      {/* แถวค่าแรงช่าง: สำรวจด้วยแถบสีและป้ายสีขาว ตัวเลขสีดำเข้ม */}
+                      {/* แถวค่าแรงช่าง: สำรวจด้วยแถบสีและป้ายสีขาว ตัวเลขสีดำเข้ม บนพื้นขาว */}
                       {(job.laborFee || 0) > 0 && (
-                        <tr className="bg-slate-50 border-t-2 border-slate-400">
-                          <td className="py-1.5 px-2 text-center font-mono font-black text-black border-r border-slate-300">
+                        <tr className="bg-white border-t border-slate-300">
+                          <td className="py-1.5 px-2 text-center font-mono font-black text-black border-r border-slate-300" style={{ color: '#000000' }}>
                             {partsCount + 1}
                           </td>
                           <td className="py-1.5 px-3 border-r border-slate-300 font-black text-black">
@@ -598,22 +600,22 @@ ${financials.otherFee > 0 ? `ค่าบริการอื่นๆ: ฿${fi
                               </span>
                             </div>
                           </td>
-                          <td className="py-1.5 px-2 text-center font-mono font-black text-black text-xs border-r border-slate-300">
+                          <td className="py-1.5 px-2 text-center font-mono font-black text-black text-xs border-r border-slate-300" style={{ color: '#000000' }}>
                             1
                           </td>
-                          <td className="py-1.5 px-3 text-right font-mono font-black text-black text-xs border-r border-slate-300">
+                          <td className="py-1.5 px-3 text-right font-mono font-black text-black text-xs border-r border-slate-300" style={{ color: '#000000' }}>
                             {(job.laborFee || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
-                          <td className="py-1.5 px-3 text-right font-mono font-black text-black text-xs">
+                          <td className="py-1.5 px-3 text-right font-mono font-black text-black text-xs" style={{ color: '#000000' }}>
                             {(job.laborFee || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                         </tr>
                       )}
 
-                      {/* แถวค่าบริการอื่นๆ: ตรวจสอบด้วยแถบสีและป้ายสีส้ม ตัวเลขสีดำเข้ม */}
+                      {/* แถวค่าบริการอื่นๆ: ตรวจสอบด้วยแถบสีและป้ายสีส้ม ตัวเลขสีดำเข้ม บนพื้นขาว */}
                       {(job.otherFee || 0) > 0 && (
-                        <tr className="bg-orange-50/50 border-t border-orange-200">
-                          <td className="py-1.5 px-2 text-center font-mono font-black text-black border-r border-slate-300">
+                        <tr className="bg-white border-t border-slate-300">
+                          <td className="py-1.5 px-2 text-center font-mono font-black text-black border-r border-slate-300" style={{ color: '#000000' }}>
                             {partsCount + ((job.laborFee || 0) > 0 ? 2 : 1)}
                           </td>
                           <td className="py-1.5 px-3 border-r border-slate-300 font-black text-black">
@@ -624,13 +626,13 @@ ${financials.otherFee > 0 ? `ค่าบริการอื่นๆ: ฿${fi
                               </span>
                             </div>
                           </td>
-                          <td className="py-1.5 px-2 text-center font-mono font-black text-black text-xs border-r border-slate-300">
+                          <td className="py-1.5 px-2 text-center font-mono font-black text-black text-xs border-r border-slate-300" style={{ color: '#000000' }}>
                             1
                           </td>
-                          <td className="py-1.5 px-3 text-right font-mono font-black text-black text-xs border-r border-slate-300">
+                          <td className="py-1.5 px-3 text-right font-mono font-black text-black text-xs border-r border-slate-300" style={{ color: '#000000' }}>
                             {(job.otherFee || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
-                          <td className="py-1.5 px-3 text-right font-mono font-black text-black text-xs">
+                          <td className="py-1.5 px-3 text-right font-mono font-black text-black text-xs" style={{ color: '#000000' }}>
                             {(job.otherFee || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                         </tr>
